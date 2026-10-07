@@ -1,0 +1,6 @@
+{
+  "name": "DONE Protocol",
+  "description": "Programmable settlement infrastructure for verifiable work on Solana. Deterministic escrow, Definition of Done (DoD) verification, and USDC milestone releases.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

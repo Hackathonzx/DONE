@@ -1,0 +1,96 @@
+{
+  "version": "0.1.0",
+  "name": "done_protocol",
+  "instructions": [
+    {
+      "name": "createAgreement",
+      "accounts": [
+        { "name": "sponsor", "isMut": true, "isSigner": true },
+        { "name": "worker", "isMut": false, "isSigner": false },
+        { "name": "agreement", "isMut": true, "isSigner": false },
+        { "name": "systemProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": [
+        { "name": "termsHash", "type": { "array": ["u8", 32] } },
+        { "name": "milestoneCount", "type": "u8" }
+      ]
+    },
+    {
+      "name": "createMilestone",
+      "accounts": [
+        { "name": "sponsor", "isMut": true, "isSigner": true },
+        { "name": "agreement", "isMut": true, "isSigner": false },
+        { "name": "milestone", "isMut": true, "isSigner": false },
+        { "name": "systemProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": [
+        { "name": "index", "type": "u8" },
+        { "name": "amount", "type": "u64" },
+        { "name": "dodHash", "type": { "array": ["u8", 32] } },
+        { "name": "verificationType", "type": "u8" }
+      ]
+    },
+    {
+      "name": "fundAgreement",
+      "accounts": [
+        { "name": "sponsor", "isMut": true, "isSigner": true },
+        { "name": "agreement", "isMut": true, "isSigner": false },
+        { "name": "sponsorUsdcAta", "isMut": true, "isSigner": false },
+        { "name": "vaultAta", "isMut": true, "isSigner": false },
+        { "name": "usdcMint", "isMut": false, "isSigner": false },
+        { "name": "tokenProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": [
+        { "name": "amount", "type": "u64" }
+      ]
+    },
+    {
+      "name": "submitEvidence",
+      "accounts": [
+        { "name": "worker", "isMut": true, "isSigner": true },
+        { "name": "agreement", "isMut": false, "isSigner": false },
+        { "name": "milestone", "isMut": true, "isSigner": false }
+      ],
+      "args": [
+        { "name": "milestoneIndex", "type": "u8" },
+        { "name": "evidenceHash", "type": { "array": ["u8", 32] } },
+        { "name": "metadataUri", "type": "string" }
+      ]
+    },
+    {
+      "name": "verifyMilestone",
+      "accounts": [
+        { "name": "verifier", "isMut": true, "isSigner": true },
+        { "name": "agreement", "isMut": false, "isSigner": false },
+        { "name": "milestone", "isMut": true, "isSigner": false }
+      ],
+      "args": [
+        { "name": "milestoneIndex", "type": "u8" }
+      ]
+    },
+    {
+      "name": "releasePayment",
+      "accounts": [
+        { "name": "payer", "isMut": true, "isSigner": true },
+        { "name": "agreement", "isMut": true, "isSigner": false },
+        { "name": "milestone", "isMut": true, "isSigner": false },
+        { "name": "vaultAta", "isMut": true, "isSigner": false },
+        { "name": "workerUsdcAta", "isMut": true, "isSigner": false },
+        { "name": "tokenProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": [
+        { "name": "milestoneIndex", "type": "u8" }
+      ]
+    }
+  ],
+  "errors": [
+    { "code": 6000, "name": "InvalidAgreementState", "msg": "Agreement state does not permit this instruction." },
+    { "code": 6001, "name": "InvalidDoDHash", "msg": "Definition of Done hash mismatch." },
+    { "code": 6002, "name": "MilestoneNotVerified", "msg": "Milestone must be verified before settlement release." },
+    { "code": 6003, "name": "InsufficientVaultBalance", "msg": "Escrow vault balance insufficient for milestone release." },
+    { "code": 6004, "name": "UnauthorizedWorker", "msg": "Signer is not the designated worker for this agreement." },
+    { "code": 6005, "name": "UnauthorizedVerifier", "msg": "Signer is not authorized to verify this milestone." },
+    { "code": 6006, "name": "EscrowAlreadyFunded", "msg": "Agreement escrow vault has already been funded." },
+    { "code": 6007, "name": "MilestoneAlreadyReleased", "msg": "Milestone funds have already been released to worker." }
+  ]
+}
