@@ -1,7 +1,15 @@
 pub mod create_agreement;
 pub mod create_milestone;
 pub mod fund_agreement;
+pub mod submit_evidence;
+pub mod verify_evidence;
+pub mod release_milestone;
+pub mod reject_evidence;
 
 pub use create_agreement::*;
 pub use create_milestone::*;
 pub use fund_agreement::*;
+pub use submit_evidence::*;
+pub use verify_evidence::*;
+pub use release_milestone::*;
+pub use reject_evidence::*;

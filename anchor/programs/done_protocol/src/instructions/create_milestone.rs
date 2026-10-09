@@ -47,6 +47,7 @@ pub fn handler(
     index: u32,
     amount: u64,
     definition_hash: [u8; 32],
+    verifier: Pubkey,
 ) -> Result<()> {
     require!(
         ctx.accounts.agreement.status == AgreementStatus::Draft,
@@ -54,6 +55,11 @@ pub fn handler(
     );
 
     require!(amount > 0, DoneError::InvalidAmount);
+
+    require!(
+        verifier != Pubkey::default(),
+        DoneError::InvalidVerifier
+    );
 
     require!(
         index == ctx.accounts.agreement.milestone_count,
@@ -82,11 +88,12 @@ pub fn handler(
     milestone.definition_hash = definition_hash;
     milestone.evidence_hash = [0u8; 32];
     milestone.evidence_submitted = false;
-    milestone.verifier = Pubkey::default();
+    milestone.verifier = verifier;
     milestone.released_amount = 0;
     milestone.bump = ctx.bumps.milestone;
 
     let agreement = &mut ctx.accounts.agreement;
+
     agreement.allocated_amount = new_allocated;
     agreement.milestone_count = agreement
         .milestone_count

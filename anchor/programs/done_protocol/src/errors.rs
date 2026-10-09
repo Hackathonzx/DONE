@@ -19,4 +19,25 @@ pub enum DoneError {
 
     #[msg("Payment mint does not match the agreement")]
     InvalidPaymentMint,
+
+    #[msg("Verifier public key cannot be the default public key")]
+    InvalidVerifier,
+
+    #[msg("Evidence hash cannot be empty")]
+    InvalidEvidenceHash,
+
+    #[msg("Milestone is not in the required status")]
+    InvalidMilestoneStatus,
+
+    #[msg("Worker token account does not belong to the assigned worker")]
+    InvalidWorkerTokenAccount,
+
+    #[msg("Escrow token account is invalid")]
+    InvalidEscrowAccount,
+
+    #[msg("Release would exceed the agreement total")]
+    ReleaseExceedsTotal,
+
+    #[msg("Rejection reason hash cannot be empty")]
+    InvalidRejectionReason,
 }

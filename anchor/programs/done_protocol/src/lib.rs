@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 
 pub mod errors;
+pub mod events;
 pub mod instructions;
 pub mod state;
 
@@ -31,18 +32,46 @@ pub mod done_protocol {
         index: u32,
         amount: u64,
         definition_hash: [u8; 32],
+        verifier: Pubkey,
     ) -> Result<()> {
         instructions::create_milestone::handler(
             ctx,
             index,
             amount,
             definition_hash,
+            verifier,
         )
     }
+
     pub fn fund_agreement(
         ctx: Context<FundAgreement>,
     ) -> Result<()> {
-        crate::instructions::fund_agreement::handler(ctx)
+        instructions::fund_agreement::handler(ctx)
     }
 
+    pub fn submit_evidence(
+        ctx: Context<SubmitEvidence>,
+        evidence_hash: [u8; 32],
+    ) -> Result<()> {
+        instructions::submit_evidence::handler(ctx, evidence_hash)
+    }
+
+    pub fn verify_evidence(
+        ctx: Context<VerifyEvidence>,
+    ) -> Result<()> {
+        instructions::verify_evidence::handler(ctx)
+    }
+
+    pub fn reject_evidence(
+        ctx: Context<RejectEvidence>,
+        rejection_reason_hash: [u8; 32],
+    ) -> Result<()> {
+        instructions::reject_evidence::handler(ctx, rejection_reason_hash)
+    }
+
+    pub fn release_milestone(
+        ctx: Context<ReleaseMilestone>,
+    ) -> Result<()> {
+        instructions::release_milestone::handler(ctx)
+    }
 }
