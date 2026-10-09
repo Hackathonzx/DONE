@@ -1,0 +1,64 @@
+use anchor_lang::prelude::*;
+
+use crate::state::{Agreement, AgreementStatus};
+
+#[derive(Accounts)]
+#[instruction(agreement_id: u64)]
+pub struct CreateAgreement<'info> {
+    #[account(mut)]
+    pub sponsor: Signer<'info>,
+
+    /// CHECK: Stored as the intended recipient. Payment authorization
+    /// will be enforced by the settlement instruction.
+    pub worker: UncheckedAccount<'info>,
+
+    /// CHECK: Its address is stored here. The funding instruction must
+    /// validate this as an SPL Token mint before accepting tokens.
+    pub payment_mint: UncheckedAccount<'info>,
+
+    #[account(
+        init,
+        payer = sponsor,
+        space = 8 + Agreement::INIT_SPACE,
+        seeds = [
+            b"agreement",
+            sponsor.key().as_ref(),
+            &agreement_id.to_le_bytes()
+        ],
+        bump
+    )]
+    pub agreement: Account<'info, Agreement>,
+
+    pub system_program: Program<'info, System>,
+}
+
+pub fn handler(
+    ctx: Context<CreateAgreement>,
+    agreement_id: u64,
+    total_amount: u64,
+    definition_hash: [u8; 32],
+) -> Result<()> {
+    require!(
+        total_amount > 0,
+        crate::errors::DoneError::InvalidAmount
+    );
+
+    let agreement = &mut ctx.accounts.agreement;
+
+    agreement.sponsor = ctx.accounts.sponsor.key();
+    agreement.worker = ctx.accounts.worker.key();
+    agreement.payment_mint = ctx.accounts.payment_mint.key();
+
+    agreement.agreement_id = agreement_id;
+    agreement.status = AgreementStatus::Draft;
+
+    agreement.total_amount = total_amount;
+    agreement.allocated_amount = 0;
+    agreement.released_amount = 0;
+    agreement.milestone_count = 0;
+
+    agreement.definition_hash = definition_hash;
+    agreement.bump = ctx.bumps.agreement;
+
+    Ok(())
+}
