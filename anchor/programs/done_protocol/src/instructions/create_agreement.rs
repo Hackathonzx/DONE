@@ -1,4 +1,4 @@
-use anchor_lang::prelude::*;
+use anchor_lang::prelude::*;\nuse anchor_spl::token::Mint;
 
 use crate::state::{Agreement, AgreementStatus};
 
@@ -12,9 +12,7 @@ pub struct CreateAgreement<'info> {
     /// will be enforced by the settlement instruction.
     pub worker: UncheckedAccount<'info>,
 
-    /// CHECK: Its address is stored here. The funding instruction must
-    /// validate this as an SPL Token mint before accepting tokens.
-    pub payment_mint: UncheckedAccount<'info>,
+    pub payment_mint: Account<'info, Mint>,
 
     #[account(
         init,
@@ -41,6 +39,17 @@ pub fn handler(
     require!(
         total_amount > 0,
         crate::errors::DoneError::InvalidAmount
+    );
+
+    require!(
+        ctx.accounts.worker.key() != Pubkey::default()
+            && ctx.accounts.worker.key() != ctx.accounts.sponsor.key(),
+        crate::errors::DoneError::InvalidWorker
+    );
+
+    require!(
+        definition_hash != [0u8; 32],
+        crate::errors::DoneError::InvalidDefinitionHash
     );
 
     let agreement = &mut ctx.accounts.agreement;

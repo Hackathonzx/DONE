@@ -62,6 +62,11 @@ pub fn handler(
     );
 
     require!(
+        definition_hash != [0u8; 32],
+        DoneError::InvalidDefinitionHash
+    );
+
+    require!(
         index == ctx.accounts.agreement.milestone_count,
         DoneError::InvalidMilestoneIndex
     );

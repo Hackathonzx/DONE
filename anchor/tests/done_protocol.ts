@@ -78,6 +78,49 @@ describe("done_protocol", () => {
         program.programId
       );
 
+    // A sponsor cannot also be the worker.
+    let invalidWorkerRejected = false;
+    try {
+      await program.methods
+        .createAgreement(agreementId, totalAmount, definitionHash)
+        .accounts({
+          sponsor,
+          worker: sponsor,
+          paymentMint,
+          agreement: agreementPda,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .rpc();
+    } catch (error) {
+      invalidWorkerRejected = true;
+      assert.include(String(error), "Worker must be a nonzero key different from the sponsor");
+    }
+    assert.isTrue(invalidWorkerRejected);
+
+    // A Definition of Done must have a nonzero commitment.
+    let emptyAgreementHashRejected = false;
+    try {
+      await program.methods
+        .createAgreement(
+          agreementId,
+          totalAmount,
+          Array.from(Buffer.alloc(32))
+        )
+        .accounts({
+          sponsor,
+          worker: worker.publicKey,
+          paymentMint,
+          agreement: agreementPda,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .rpc();
+    } catch (error) {
+      emptyAgreementHashRejected = true;
+      assert.include(String(error), "Definition of Done hash cannot be empty");
+    }
+    assert.isTrue(emptyAgreementHashRejected);
+
+    // The valid agreement creation should still succeed.
     await program.methods
       .createAgreement(agreementId, totalAmount, definitionHash)
       .accounts({
@@ -96,7 +139,12 @@ describe("done_protocol", () => {
     assert.equal(agreement.milestoneCount, 0);
     assert.ok("draft" in agreement.status);
 
-    async function createMilestone(index: number, amount: number) {
+    async function createMilestone(
+      index: number,
+      amount: number,
+      milestoneDefinitionHash: number[] = definitionHash,
+      milestoneVerifier: anchor.web3.PublicKey = verifier.publicKey
+    ) {
       const [milestonePda] =
         anchor.web3.PublicKey.findProgramAddressSync(
           [
@@ -111,8 +159,8 @@ describe("done_protocol", () => {
         .createMilestone(
           index,
           new anchor.BN(amount),
-          definitionHash,
-          verifier.publicKey
+          milestoneDefinitionHash,
+          milestoneVerifier
         )
         .accounts({
           sponsor,
@@ -125,6 +173,32 @@ describe("done_protocol", () => {
       return milestonePda;
     }
 
+    // Reject an empty milestone Definition of Done hash.
+    let emptyMilestoneHashRejected = false;
+    try {
+      await createMilestone(0, 600_000, Array.from(Buffer.alloc(32)));
+    } catch (error) {
+      emptyMilestoneHashRejected = true;
+      assert.include(String(error), "Definition of Done hash cannot be empty");
+    }
+    assert.isTrue(emptyMilestoneHashRejected);
+
+    // Reject an unset verifier.
+    let defaultVerifierRejected = false;
+    try {
+      await createMilestone(
+        0,
+        600_000,
+        definitionHash,
+        anchor.web3.PublicKey.default
+      );
+    } catch (error) {
+      defaultVerifierRejected = true;
+      assert.include(String(error), "Verifier public key cannot be the default public key");
+    }
+    assert.isTrue(defaultVerifierRejected);
+
+    // Valid milestone creation still succeeds after the rejected attempts.
     const firstPda = await createMilestone(0, 600_000);
     let first = await program.account.milestone.fetch(firstPda);
 

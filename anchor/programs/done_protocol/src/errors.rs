@@ -20,6 +20,12 @@ pub enum DoneError {
     #[msg("Payment mint does not match the agreement")]
     InvalidPaymentMint,
 
+    #[msg("Worker must be a nonzero key different from the sponsor")]
+    InvalidWorker,
+
+    #[msg("Definition of Done hash cannot be empty")]
+    InvalidDefinitionHash,
+
     #[msg("Verifier public key cannot be the default public key")]
     InvalidVerifier,
 
