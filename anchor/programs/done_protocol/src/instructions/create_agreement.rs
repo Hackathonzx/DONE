@@ -1,4 +1,5 @@
-use anchor_lang::prelude::*;\nuse anchor_spl::token::Mint;
+use anchor_lang::prelude::*;
+use anchor_spl::token::Mint;
 
 use crate::state::{Agreement, AgreementStatus};
 
