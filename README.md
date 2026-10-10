@@ -9,6 +9,7 @@ DONE Protocol is a Solana program for USDC-funded work agreements. A sponsor cre
 ## Start here
 
 - **Frontend teammate:** read [`docs/FRONTEND_INTEGRATION.md`](https://docs.google.com/document/d/1eRdrpOdlyEiV4Pzyi79fMp61ykGWpQtxmu3P7Wd_-EM/edit?usp=sharing) first.
+- **FRONTEND_MESSAGE:** https://docs.google.com/document/d/1NJMJOkSi8_ZFK4H69xi3xNsn0jJRX1x_XbPa_qumCdA/edit?usp=sharing
 - **Instruction/account/PDA reference:** [`docs/ON_CHAIN_SPEC.md`](https://docs.google.com/document/d/18TuPMDJIuwzIy4m0CfpC50pxoMBBVj4_U8xZgg6azco/edit?usp=sharing)
 - **Security assumptions and limitations:** [`docs/SECURITY_AND_TRUST_MODEL.md`](https://docs.google.com/document/d/1jDiAhl7Xs88UwZdHZ0AUVeuLS0_AtD3PyZUJe0RvWzo/edit?usp=sharing).
 - **Automated account-check attestation:** [`docs/VERIFICATION_RECIPE.md`](https://docs.google.com/document/d/19De09nQx0iA7cVJRiCD1fOFTq6LjAmKyEDjWKbm_8gA/edit?usp=sharing).
