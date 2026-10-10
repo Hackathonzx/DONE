@@ -72,6 +72,11 @@ pub fn handler(ctx: Context<FundAgreement>) -> Result<()> {
     );
 
     require!(
+    agreement.worker_accepted,
+    DoneError::WorkerAcceptanceRequired
+);
+
+    require!(
         agreement.total_amount > 0,
         DoneError::InvalidAmount
     );

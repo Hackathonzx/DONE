@@ -54,6 +54,11 @@ pub fn handler(
         DoneError::InvalidAgreementStatus
     );
 
+    require!(
+        !ctx.accounts.agreement.worker_accepted,
+        DoneError::AgreementAlreadyAccepted
+    );
+
     require!(amount > 0, DoneError::InvalidAmount);
 
     require!(

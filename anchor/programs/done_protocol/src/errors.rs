@@ -46,4 +46,13 @@ pub enum DoneError {
 
     #[msg("Rejection reason hash cannot be empty")]
     InvalidRejectionReason,
+
+    #[msg("All milestone allocations must equal the agreement total before acceptance")]
+IncompleteMilestoneAllocation,
+
+#[msg("The worker has already accepted this agreement")]
+AgreementAlreadyAccepted,
+
+#[msg("The worker must accept the agreement before funding")]
+WorkerAcceptanceRequired,
 }

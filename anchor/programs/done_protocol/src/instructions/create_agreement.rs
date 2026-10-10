@@ -77,7 +77,8 @@ pub fn handler(
     agreement.milestone_count = 0;
 
     agreement.definition_hash = definition_hash;
-    agreement.bump = ctx.bumps.agreement;
+agreement.bump = ctx.bumps.agreement;
+agreement.worker_accepted = false;
 
     Ok(())
 }

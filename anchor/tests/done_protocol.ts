@@ -280,6 +280,30 @@ agreement: agreementPda,
     assert.ok("pending" in first.status);
     assert.equal(first.verifier.toBase58(), verifier.publicKey.toBase58());
 
+    
+    // Acceptance must fail while milestone allocations are incomplete.
+    let incompleteAllocationAcceptanceRejected = false;
+
+    try {
+      await program.methods
+        .acceptAgreement()
+        .accounts({
+          worker: worker.publicKey,
+          agreement: agreementPda,
+        })
+        .signers([worker])
+        .rpc();
+    } catch (error) {
+      incompleteAllocationAcceptanceRejected = true;
+      assert.include(
+        String(error),
+        "All milestone allocations must equal the agreement total before acceptance"
+      );
+    }
+
+    assert.isTrue(incompleteAllocationAcceptanceRejected);
+
+
     const secondPda = await createMilestone(1, 400_000);
     const second = await program.account.milestone.fetch(secondPda);
 
@@ -320,6 +344,103 @@ agreement: agreementPda,
         [Buffer.from("escrow-token"), agreementPda.toBuffer()],
         program.programId
       );
+
+      
+    // Funding must fail before worker acceptance.
+    let fundingBeforeAcceptanceRejected = false;
+
+    try {
+      await program.methods
+        .fundAgreement()
+        .accounts({
+          sponsor,
+          agreement: agreementPda,
+          paymentMint,
+          sponsorTokenAccount: sponsorTokenAccount.address,
+          escrowAuthority,
+          escrowTokenAccount,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .rpc();
+    } catch (error) {
+      fundingBeforeAcceptanceRejected = true;
+      assert.include(
+        String(error),
+        "The worker must accept the agreement before funding"
+      );
+    }
+
+    assert.isTrue(fundingBeforeAcceptanceRejected);
+
+    // An unrelated worker must not accept this agreement.
+    let unauthorizedAcceptanceRejected = false;
+
+    try {
+      await program.methods
+        .acceptAgreement()
+        .accounts({
+          worker: unauthorizedWorker.publicKey,
+          agreement: agreementPda,
+        })
+        .signers([unauthorizedWorker])
+        .rpc();
+    } catch {
+      unauthorizedAcceptanceRejected = true;
+    }
+
+    assert.isTrue(unauthorizedAcceptanceRejected);
+
+    // The assigned worker accepts the fully allocated agreement.
+    await program.methods
+      .acceptAgreement()
+      .accounts({
+        worker: worker.publicKey,
+        agreement: agreementPda,
+      })
+      .signers([worker])
+      .rpc();
+
+    agreement = await program.account.agreement.fetch(agreementPda);
+    assert.isTrue(agreement.workerAccepted);
+
+    // Acceptance cannot be repeated.
+    let duplicateAcceptanceRejected = false;
+
+    try {
+      await program.methods
+        .acceptAgreement()
+        .accounts({
+          worker: worker.publicKey,
+          agreement: agreementPda,
+        })
+        .signers([worker])
+        .rpc();
+    } catch (error) {
+      duplicateAcceptanceRejected = true;
+      assert.include(
+        String(error),
+        "The worker has already accepted this agreement"
+      );
+    }
+
+    assert.isTrue(duplicateAcceptanceRejected);
+
+    // The sponsor cannot add milestones after acceptance.
+    let milestoneAfterAcceptanceRejected = false;
+
+    try {
+      await createMilestone(2, 1);
+    } catch (error) {
+      milestoneAfterAcceptanceRejected = true;
+      assert.include(
+        String(error),
+        "The worker has already accepted this agreement"
+      );
+    }
+
+    assert.isTrue(milestoneAfterAcceptanceRejected);
+
 
     await program.methods
       .fundAgreement()
@@ -783,6 +904,18 @@ agreement: agreementPda,
         ],
         program.programId
       );
+
+      
+    // The worker must accept the cancellation agreement before funding.
+    await program.methods
+      .acceptAgreement()
+      .accounts({
+        worker: worker.publicKey,
+        agreement: cancellationAgreementPda,
+      })
+      .signers([worker])
+      .rpc();
+
 
     await program.methods
       .fundAgreement()

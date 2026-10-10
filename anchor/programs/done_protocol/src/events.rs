@@ -42,3 +42,14 @@ pub struct AgreementCancelledEvent {
     pub refund_amount: u64,
     pub unix_timestamp: i64,
 }
+
+#[event]
+pub struct AgreementAcceptedEvent {
+    pub agreement: Pubkey,
+    pub sponsor: Pubkey,
+    pub worker: Pubkey,
+    pub definition_hash: [u8; 32],
+    pub total_amount: u64,
+    pub milestone_count: u32,
+    pub unix_timestamp: i64,
+}

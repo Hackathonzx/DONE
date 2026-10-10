@@ -33,6 +33,12 @@ pub mod done_protocol {
         )
     }
 
+    pub fn accept_agreement(
+    ctx: Context<AcceptAgreement>,
+) -> Result<()> {
+    instructions::accept_agreement::handler(ctx)
+}
+
     pub fn create_milestone(
         ctx: Context<CreateMilestone>,
         index: u32,

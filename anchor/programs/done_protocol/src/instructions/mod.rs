@@ -7,6 +7,8 @@ pub mod verify_evidence;
 pub mod release_milestone;
 pub mod reject_evidence;
 pub mod cancel_agreement;
+pub mod accept_agreement;
+
 
 pub use initialize_config::*;
 pub use create_agreement::*;
@@ -17,3 +19,4 @@ pub use verify_evidence::*;
 pub use release_milestone::*;
 pub use reject_evidence::*;
 pub use cancel_agreement::*;
+pub use accept_agreement::*;

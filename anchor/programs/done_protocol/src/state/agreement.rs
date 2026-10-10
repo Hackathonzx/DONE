@@ -14,6 +14,7 @@ pub struct Agreement {
     pub milestone_count: u32,
     pub definition_hash: [u8; 32],
     pub bump: u8,
+    pub worker_accepted: bool,
 }
 
 #[derive(
@@ -32,3 +33,5 @@ pub enum AgreementStatus {
     Completed,
     Cancelled,
 }
+
+
