@@ -8,13 +8,13 @@ DONE Protocol is a Solana program for USDC-funded work agreements. A sponsor cre
 
 ## Start here
 
-- **Frontend teammate:** read [`docs/FRONTEND_INTEGRATION.md`](https://docs.google.com/document/d/1xvlOSvJ_gefdLs5BHcXtLiZvEW99ZWbDdbR5eCGCYHk/edit?usp=sharing) first.
-- **Instruction/account/PDA reference:** [`docs/ON_CHAIN_SPEC.md`](https://docs.google.com/document/d/1xvlOSvJ_gefdLs5BHcXtLiZvEW99ZWbDdbR5eCGCYHk/edit?usp=sharing).
-- **Security assumptions and limitations:** [`docs/SECURITY_AND_TRUST_MODEL.md`](https://docs.google.com/document/d/1xvlOSvJ_gefdLs5BHcXtLiZvEW99ZWbDdbR5eCGCYHk/edit?usp=sharing).
-- **Automated account-check attestation:** [`docs/VERIFICATION_RECIPE.md`](https://docs.google.com/document/d/1xvlOSvJ_gefdLs5BHcXtLiZvEW99ZWbDdbR5eCGCYHk/edit?usp=sharing).
-- **Devnet addresses and transactions:** [`docs/DEVNET_DEPLOYMENT_LOG.md`](https://docs.google.com/document/d/1xvlOSvJ_gefdLs5BHcXtLiZvEW99ZWbDdbR5eCGCYHk/edit?usp=sharing).
+- **Frontend teammate:** read [`docs/FRONTEND_INTEGRATION.md`](https://docs.google.com/document/d/1eRdrpOdlyEiV4Pzyi79fMp61ykGWpQtxmu3P7Wd_-EM/edit?usp=sharing) first.
+- **Instruction/account/PDA reference:** [`docs/ON_CHAIN_SPEC.md`](https://docs.google.com/document/d/18TuPMDJIuwzIy4m0CfpC50pxoMBBVj4_U8xZgg6azco/edit?usp=sharing)
+- **Security assumptions and limitations:** [`docs/SECURITY_AND_TRUST_MODEL.md`](https://docs.google.com/document/d/1jDiAhl7Xs88UwZdHZ0AUVeuLS0_AtD3PyZUJe0RvWzo/edit?usp=sharing).
+- **Automated account-check attestation:** [`docs/VERIFICATION_RECIPE.md`](https://docs.google.com/document/d/19De09nQx0iA7cVJRiCD1fOFTq6LjAmKyEDjWKbm_8gA/edit?usp=sharing).
+- **Devnet addresses and transactions:** [`docs/DEVNET_DEPLOYMENT_LOG.md`](https://docs.google.com/document/d/1J5rZmAObT8nhAE2GXgGYFfkh_9S9mNIjDR1JO3tvXyo/edit?usp=sharing).
 - **IDL export instructions:** [`docs/IDL_AND_SETUP.md`](https://docs.google.com/document/d/1xvlOSvJ_gefdLs5BHcXtLiZvEW99ZWbDdbR5eCGCYHk/edit?usp=sharing).
-- **Submission checklist:** [`docs/SUBMISSION_CHECKLIST.md`](https://docs.google.com/document/d/1xvlOSvJ_gefdLs5BHcXtLiZvEW99ZWbDdbR5eCGCYHk/edit?usp=sharing).
+- **Submission checklist:** [`docs/SUBMISSION_CHECKLIST.md`](https://docs.google.com/document/d/11hNi3npOYO7GrwvekcIFo13zDkYYjudhxtbyHvboOL8/edit?usp=sharing).
 
 ## Devnet deployment reference
 
