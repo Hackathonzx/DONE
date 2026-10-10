@@ -33,3 +33,12 @@ pub struct MilestoneReleasedEvent {
     pub evidence_hash: [u8; 32],
     pub unix_timestamp: i64,
 }
+
+#[event]
+pub struct AgreementCancelledEvent {
+    pub agreement: Pubkey,
+    pub sponsor: Pubkey,
+    pub worker: Pubkey,
+    pub refund_amount: u64,
+    pub unix_timestamp: i64,
+}

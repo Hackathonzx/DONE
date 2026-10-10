@@ -55,6 +55,12 @@ pub mod done_protocol {
         instructions::fund_agreement::handler(ctx)
     }
 
+    pub fn cancel_agreement(
+    ctx: Context<CancelAgreement>,
+) -> Result<()> {
+    instructions::cancel_agreement::handler(ctx)
+}
+
     pub fn submit_evidence(
         ctx: Context<SubmitEvidence>,
         evidence_hash: [u8; 32],

@@ -30,4 +30,5 @@ pub enum AgreementStatus {
     Funded,
     Active,
     Completed,
+    Cancelled,
 }

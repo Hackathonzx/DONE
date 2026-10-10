@@ -670,5 +670,296 @@ agreement: agreementPda,
     );
 
     assert.equal(workerBalance.amount.toString(), "1000000");
+  
+
+  
+    
+    // Cancellation/refund lifecycle with a previously paid milestone.
+    const cancellationAmount = new anchor.BN(500_000);
+    const firstCancellationAmount = new anchor.BN(200_000);
+    const remainingCancellationAmount = new anchor.BN(300_000);
+
+    await mintTo(
+      provider.connection,
+      payer,
+      paymentMint,
+      sponsorTokenAccount.address,
+      payer,
+      cancellationAmount.toNumber()
+    );
+
+    const cancellationAgreementId = new anchor.BN(2);
+
+    const [cancellationAgreementPda] =
+      anchor.web3.PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("agreement"),
+          sponsor.toBuffer(),
+          cancellationAgreementId.toArrayLike(Buffer, "le", 8),
+        ],
+        program.programId
+      );
+
+    const [cancellationMilestonePda] =
+      anchor.web3.PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("milestone"),
+          cancellationAgreementPda.toBuffer(),
+          new anchor.BN(0).toArrayLike(Buffer, "le", 4),
+        ],
+        program.programId
+      );
+
+    const [remainingMilestonePda] =
+      anchor.web3.PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("milestone"),
+          cancellationAgreementPda.toBuffer(),
+          new anchor.BN(1).toArrayLike(Buffer, "le", 4),
+        ],
+        program.programId
+      );
+
+    await program.methods
+      .createAgreement(
+        cancellationAgreementId,
+        cancellationAmount,
+        definitionHash
+      )
+      .accounts({
+        sponsor,
+        worker: worker.publicKey,
+        paymentMint,
+        config: configPda,
+        agreement: cancellationAgreementPda,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+
+    await program.methods
+      .createMilestone(
+        0,
+        firstCancellationAmount,
+        definitionHash,
+        verifier.publicKey
+      )
+      .accounts({
+        sponsor,
+        agreement: cancellationAgreementPda,
+        milestone: cancellationMilestonePda,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+
+    await program.methods
+      .createMilestone(
+        1,
+        remainingCancellationAmount,
+        definitionHash,
+        verifier.publicKey
+      )
+      .accounts({
+        sponsor,
+        agreement: cancellationAgreementPda,
+        milestone: remainingMilestonePda,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+
+    const [cancellationEscrowAuthority] =
+      anchor.web3.PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("escrow"),
+          cancellationAgreementPda.toBuffer(),
+        ],
+        program.programId
+      );
+
+    const [cancellationEscrowTokenAccount] =
+      anchor.web3.PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("escrow-token"),
+          cancellationAgreementPda.toBuffer(),
+        ],
+        program.programId
+      );
+
+    await program.methods
+      .fundAgreement()
+      .accounts({
+        sponsor,
+        agreement: cancellationAgreementPda,
+        paymentMint,
+        sponsorTokenAccount: sponsorTokenAccount.address,
+        escrowAuthority: cancellationEscrowAuthority,
+        escrowTokenAccount: cancellationEscrowTokenAccount,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+
+    // Complete and release milestone 0.
+    await program.methods
+      .submitEvidence(evidenceHash)
+      .accounts({
+        worker: worker.publicKey,
+        agreement: cancellationAgreementPda,
+        milestone: cancellationMilestonePda,
+      })
+      .signers([worker])
+      .rpc();
+
+    await program.methods
+      .verifyEvidence()
+      .accounts({
+        verifier: verifier.publicKey,
+        agreement: cancellationAgreementPda,
+        milestone: cancellationMilestonePda,
+      })
+      .signers([verifier])
+      .rpc();
+
+    await program.methods
+      .releaseMilestone()
+      .accounts({
+        agreement: cancellationAgreementPda,
+        milestone: cancellationMilestonePda,
+        paymentMint,
+        escrowAuthority: cancellationEscrowAuthority,
+        escrowTokenAccount: cancellationEscrowTokenAccount,
+        workerTokenAccount: workerTokenAccount.address,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc();
+
+    agreement = await program.account.agreement.fetch(
+      cancellationAgreementPda
+    );
+    assert.ok("active" in agreement.status);
+    assert.equal(agreement.releasedAmount.toString(), "200000");
+
+    escrow = await getAccount(
+      provider.connection,
+      cancellationEscrowTokenAccount
+    );
+    assert.equal(escrow.amount.toString(), "300000");
+
+    // Submit and verify milestone 1, but do not release it.
+    await program.methods
+      .submitEvidence(evidenceHash)
+      .accounts({
+        worker: worker.publicKey,
+        agreement: cancellationAgreementPda,
+        milestone: remainingMilestonePda,
+      })
+      .signers([worker])
+      .rpc();
+
+    await program.methods
+      .verifyEvidence()
+      .accounts({
+        verifier: verifier.publicKey,
+        agreement: cancellationAgreementPda,
+        milestone: remainingMilestonePda,
+      })
+      .signers([verifier])
+      .rpc();
+
+    // Sponsor alone cannot cancel and withdraw the remaining funds.
+    let unilateralCancellationRejected = false;
+
+    try {
+      await program.methods
+        .cancelAgreement()
+        .accounts({
+          sponsor,
+          worker: worker.publicKey,
+          agreement: cancellationAgreementPda,
+          paymentMint,
+          sponsorTokenAccount: sponsorTokenAccount.address,
+          escrowAuthority: cancellationEscrowAuthority,
+          escrowTokenAccount: cancellationEscrowTokenAccount,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .rpc();
+    } catch {
+      unilateralCancellationRejected = true;
+    }
+
+    assert.isTrue(unilateralCancellationRejected);
+
+    agreement = await program.account.agreement.fetch(
+      cancellationAgreementPda
+    );
+    assert.ok("active" in agreement.status);
+    assert.equal(agreement.releasedAmount.toString(), "200000");
+
+    escrow = await getAccount(
+      provider.connection,
+      cancellationEscrowTokenAccount
+    );
+    assert.equal(escrow.amount.toString(), "300000");
+
+    // Both parties sign: refund only the remaining 300,000 tokens.
+    await program.methods
+      .cancelAgreement()
+      .accounts({
+        sponsor,
+        worker: worker.publicKey,
+        agreement: cancellationAgreementPda,
+        paymentMint,
+        sponsorTokenAccount: sponsorTokenAccount.address,
+        escrowAuthority: cancellationEscrowAuthority,
+        escrowTokenAccount: cancellationEscrowTokenAccount,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([worker])
+      .rpc();
+
+    agreement = await program.account.agreement.fetch(
+      cancellationAgreementPda
+    );
+    assert.ok("cancelled" in agreement.status);
+    assert.equal(agreement.releasedAmount.toString(), "200000");
+
+    escrow = await getAccount(
+      provider.connection,
+      cancellationEscrowTokenAccount
+    );
+    assert.equal(escrow.amount.toString(), "0");
+
+    const refundBalance = await getAccount(
+      provider.connection,
+      sponsorTokenAccount.address
+    );
+    assert.equal(refundBalance.amount.toString(), "300000");
+
+    // A cancelled agreement cannot release milestone 1 afterward.
+    let releaseAfterCancellationRejected = false;
+
+    try {
+      await program.methods
+        .releaseMilestone()
+        .accounts({
+          agreement: cancellationAgreementPda,
+          milestone: remainingMilestonePda,
+          paymentMint,
+          escrowAuthority: cancellationEscrowAuthority,
+          escrowTokenAccount: cancellationEscrowTokenAccount,
+          workerTokenAccount: workerTokenAccount.address,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .rpc();
+    } catch {
+      releaseAfterCancellationRejected = true;
+    }
+
+    assert.isTrue(releaseAfterCancellationRejected);
+
+    workerBalance = await getAccount(
+      provider.connection,
+      workerTokenAccount.address
+    );
+    assert.equal(workerBalance.amount.toString(), "1200000");
   });
 });
