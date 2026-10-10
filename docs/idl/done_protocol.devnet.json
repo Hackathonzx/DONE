@@ -1,0 +1,1615 @@
+{
+  "accounts": [
+    {
+      "discriminator": [
+        83,
+        212,
+        5,
+        110,
+        225,
+        249,
+        197,
+        84
+      ],
+      "name": "Agreement"
+    },
+    {
+      "discriminator": [
+        38,
+        210,
+        239,
+        177,
+        85,
+        184,
+        10,
+        44
+      ],
+      "name": "Milestone"
+    },
+    {
+      "discriminator": [
+        207,
+        91,
+        250,
+        28,
+        152,
+        179,
+        215,
+        209
+      ],
+      "name": "ProtocolConfig"
+    }
+  ],
+  "address": "82MCkYR3RkcqBcYWDDixbaoi4bWL8w5ohu7UkJTiZXYM",
+  "errors": [
+    {
+      "code": 6000,
+      "msg": "Amount must be greater than zero",
+      "name": "InvalidAmount"
+    },
+    {
+      "code": 6001,
+      "msg": "Agreement is not in Draft status",
+      "name": "InvalidAgreementStatus"
+    },
+    {
+      "code": 6002,
+      "msg": "Milestone allocation exceeds agreement total",
+      "name": "AllocationExceedsTotal"
+    },
+    {
+      "code": 6003,
+      "msg": "Milestone index must be sequential",
+      "name": "InvalidMilestoneIndex"
+    },
+    {
+      "code": 6004,
+      "msg": "Unauthorized caller",
+      "name": "Unauthorized"
+    },
+    {
+      "code": 6005,
+      "msg": "Payment mint does not match the agreement",
+      "name": "InvalidPaymentMint"
+    },
+    {
+      "code": 6006,
+      "msg": "Worker must be a nonzero key different from the sponsor",
+      "name": "InvalidWorker"
+    },
+    {
+      "code": 6007,
+      "msg": "Definition of Done hash cannot be empty",
+      "name": "InvalidDefinitionHash"
+    },
+    {
+      "code": 6008,
+      "msg": "Verifier public key cannot be the default public key",
+      "name": "InvalidVerifier"
+    },
+    {
+      "code": 6009,
+      "msg": "Evidence hash cannot be empty",
+      "name": "InvalidEvidenceHash"
+    },
+    {
+      "code": 6010,
+      "msg": "Milestone is not in the required status",
+      "name": "InvalidMilestoneStatus"
+    },
+    {
+      "code": 6011,
+      "msg": "Worker token account does not belong to the assigned worker",
+      "name": "InvalidWorkerTokenAccount"
+    },
+    {
+      "code": 6012,
+      "msg": "Escrow token account is invalid",
+      "name": "InvalidEscrowAccount"
+    },
+    {
+      "code": 6013,
+      "msg": "Release would exceed the agreement total",
+      "name": "ReleaseExceedsTotal"
+    },
+    {
+      "code": 6014,
+      "msg": "Rejection reason hash cannot be empty",
+      "name": "InvalidRejectionReason"
+    },
+    {
+      "code": 6015,
+      "msg": "All milestone allocations must equal the agreement total before acceptance",
+      "name": "IncompleteMilestoneAllocation"
+    },
+    {
+      "code": 6016,
+      "msg": "The worker has already accepted this agreement",
+      "name": "AgreementAlreadyAccepted"
+    },
+    {
+      "code": 6017,
+      "msg": "The worker must accept the agreement before funding",
+      "name": "WorkerAcceptanceRequired"
+    }
+  ],
+  "events": [
+    {
+      "discriminator": [
+        82,
+        126,
+        114,
+        177,
+        169,
+        92,
+        82,
+        189
+      ],
+      "name": "AgreementAcceptedEvent"
+    },
+    {
+      "discriminator": [
+        119,
+        65,
+        126,
+        144,
+        97,
+        166,
+        212,
+        82
+      ],
+      "name": "AgreementCancelledEvent"
+    },
+    {
+      "discriminator": [
+        202,
+        231,
+        219,
+        220,
+        101,
+        71,
+        194,
+        70
+      ],
+      "name": "EvidenceSubmittedEvent"
+    },
+    {
+      "discriminator": [
+        232,
+        117,
+        63,
+        24,
+        141,
+        213,
+        188,
+        14
+      ],
+      "name": "MilestoneReleasedEvent"
+    },
+    {
+      "discriminator": [
+        133,
+        84,
+        177,
+        205,
+        218,
+        12,
+        18,
+        113
+      ],
+      "name": "VerificationAttestedEvent"
+    }
+  ],
+  "instructions": [
+    {
+      "accounts": [
+        {
+          "name": "worker",
+          "relations": [
+            "agreement"
+          ],
+          "signer": true
+        },
+        {
+          "name": "agreement",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  114,
+                  101,
+                  101,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "account": "Agreement",
+                "kind": "account",
+                "path": "agreement.sponsor"
+              },
+              {
+                "account": "Agreement",
+                "kind": "account",
+                "path": "agreement.agreement_id"
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        69,
+        99,
+        1,
+        250,
+        152,
+        135,
+        196,
+        160
+      ],
+      "name": "accept_agreement"
+    },
+    {
+      "accounts": [
+        {
+          "name": "sponsor",
+          "relations": [
+            "agreement"
+          ],
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "worker",
+          "relations": [
+            "agreement"
+          ],
+          "signer": true
+        },
+        {
+          "name": "agreement",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  114,
+                  101,
+                  101,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sponsor"
+              },
+              {
+                "account": "Agreement",
+                "kind": "account",
+                "path": "agreement.agreement_id"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "payment_mint"
+        },
+        {
+          "name": "sponsor_token_account",
+          "writable": true
+        },
+        {
+          "name": "escrow_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "agreement"
+              }
+            ]
+          }
+        },
+        {
+          "name": "escrow_token_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119,
+                  45,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "agreement"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "name": "token_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        75,
+        89,
+        85,
+        4,
+        100,
+        216,
+        143,
+        37
+      ],
+      "name": "cancel_agreement"
+    },
+    {
+      "accounts": [
+        {
+          "name": "sponsor",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "docs": [
+            "will be enforced by the settlement instruction."
+          ],
+          "name": "worker"
+        },
+        {
+          "name": "payment_mint"
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "agreement",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  114,
+                  101,
+                  101,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sponsor"
+              },
+              {
+                "kind": "arg",
+                "path": "agreement_id"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "agreement_id",
+          "type": "u64"
+        },
+        {
+          "name": "total_amount",
+          "type": "u64"
+        },
+        {
+          "name": "definition_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ],
+      "discriminator": [
+        220,
+        156,
+        65,
+        172,
+        252,
+        68,
+        74,
+        233
+      ],
+      "name": "create_agreement"
+    },
+    {
+      "accounts": [
+        {
+          "name": "sponsor",
+          "relations": [
+            "agreement"
+          ],
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "agreement",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  114,
+                  101,
+                  101,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sponsor"
+              },
+              {
+                "account": "Agreement",
+                "kind": "account",
+                "path": "agreement.agreement_id"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "milestone",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  108,
+                  101,
+                  115,
+                  116,
+                  111,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "agreement"
+              },
+              {
+                "kind": "arg",
+                "path": "index"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "index",
+          "type": "u32"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "definition_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "verifier",
+          "type": "pubkey"
+        }
+      ],
+      "discriminator": [
+        239,
+        58,
+        201,
+        28,
+        40,
+        186,
+        173,
+        48
+      ],
+      "name": "create_milestone"
+    },
+    {
+      "accounts": [
+        {
+          "name": "sponsor",
+          "relations": [
+            "agreement"
+          ],
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "agreement",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  114,
+                  101,
+                  101,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sponsor"
+              },
+              {
+                "account": "Agreement",
+                "kind": "account",
+                "path": "agreement.agreement_id"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "payment_mint"
+        },
+        {
+          "name": "sponsor_token_account",
+          "writable": true
+        },
+        {
+          "name": "escrow_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "agreement"
+              }
+            ]
+          }
+        },
+        {
+          "name": "escrow_token_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119,
+                  45,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "agreement"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "name": "token_program"
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        107,
+        79,
+        10,
+        20,
+        10,
+        243,
+        34,
+        18
+      ],
+      "name": "fund_agreement"
+    },
+    {
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "payment_mint"
+        },
+        {
+          "address": "82MCkYR3RkcqBcYWDDixbaoi4bWL8w5ohu7UkJTiZXYM",
+          "name": "program"
+        },
+        {
+          "name": "program_data"
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        208,
+        127,
+        21,
+        1,
+        194,
+        190,
+        196,
+        70
+      ],
+      "name": "initialize_config"
+    },
+    {
+      "accounts": [
+        {
+          "name": "verifier",
+          "relations": [
+            "milestone"
+          ],
+          "signer": true
+        },
+        {
+          "name": "agreement",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  114,
+                  101,
+                  101,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "account": "Agreement",
+                "kind": "account",
+                "path": "agreement.sponsor"
+              },
+              {
+                "account": "Agreement",
+                "kind": "account",
+                "path": "agreement.agreement_id"
+              }
+            ]
+          },
+          "relations": [
+            "milestone"
+          ],
+          "writable": true
+        },
+        {
+          "name": "milestone",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  108,
+                  101,
+                  115,
+                  116,
+                  111,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "agreement"
+              },
+              {
+                "account": "Milestone",
+                "kind": "account",
+                "path": "milestone.index"
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "rejection_reason_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ],
+      "discriminator": [
+        121,
+        151,
+        8,
+        129,
+        54,
+        165,
+        52,
+        114
+      ],
+      "name": "reject_evidence"
+    },
+    {
+      "accounts": [
+        {
+          "name": "agreement",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  114,
+                  101,
+                  101,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "account": "Agreement",
+                "kind": "account",
+                "path": "agreement.sponsor"
+              },
+              {
+                "account": "Agreement",
+                "kind": "account",
+                "path": "agreement.agreement_id"
+              }
+            ]
+          },
+          "relations": [
+            "milestone"
+          ],
+          "writable": true
+        },
+        {
+          "name": "milestone",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  108,
+                  101,
+                  115,
+                  116,
+                  111,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "agreement"
+              },
+              {
+                "account": "Milestone",
+                "kind": "account",
+                "path": "milestone.index"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "payment_mint"
+        },
+        {
+          "name": "escrow_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "agreement"
+              }
+            ]
+          }
+        },
+        {
+          "name": "escrow_token_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119,
+                  45,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "agreement"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "worker_token_account",
+          "writable": true
+        },
+        {
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "name": "token_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        56,
+        2,
+        199,
+        164,
+        184,
+        108,
+        167,
+        222
+      ],
+      "name": "release_milestone"
+    },
+    {
+      "accounts": [
+        {
+          "name": "worker",
+          "relations": [
+            "agreement"
+          ],
+          "signer": true
+        },
+        {
+          "name": "agreement",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  114,
+                  101,
+                  101,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "account": "Agreement",
+                "kind": "account",
+                "path": "agreement.sponsor"
+              },
+              {
+                "account": "Agreement",
+                "kind": "account",
+                "path": "agreement.agreement_id"
+              }
+            ]
+          },
+          "relations": [
+            "milestone"
+          ],
+          "writable": true
+        },
+        {
+          "name": "milestone",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  108,
+                  101,
+                  115,
+                  116,
+                  111,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "agreement"
+              },
+              {
+                "account": "Milestone",
+                "kind": "account",
+                "path": "milestone.index"
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "evidence_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ],
+      "discriminator": [
+        12,
+        169,
+        228,
+        194,
+        229,
+        31,
+        44,
+        39
+      ],
+      "name": "submit_evidence"
+    },
+    {
+      "accounts": [
+        {
+          "name": "verifier",
+          "relations": [
+            "milestone"
+          ],
+          "signer": true
+        },
+        {
+          "name": "agreement",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  103,
+                  114,
+                  101,
+                  101,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "account": "Agreement",
+                "kind": "account",
+                "path": "agreement.sponsor"
+              },
+              {
+                "account": "Agreement",
+                "kind": "account",
+                "path": "agreement.agreement_id"
+              }
+            ]
+          },
+          "relations": [
+            "milestone"
+          ],
+          "writable": true
+        },
+        {
+          "name": "milestone",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  108,
+                  101,
+                  115,
+                  116,
+                  111,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "agreement"
+              },
+              {
+                "account": "Milestone",
+                "kind": "account",
+                "path": "milestone.index"
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        41,
+        242,
+        99,
+        213,
+        185,
+        46,
+        83,
+        227
+      ],
+      "name": "verify_evidence"
+    }
+  ],
+  "metadata": {
+    "description": "Created with Anchor",
+    "name": "done_protocol",
+    "spec": "0.1.0",
+    "version": "0.1.0"
+  },
+  "types": [
+    {
+      "name": "Agreement",
+      "type": {
+        "fields": [
+          {
+            "name": "sponsor",
+            "type": "pubkey"
+          },
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "payment_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "agreement_id",
+            "type": "u64"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "AgreementStatus"
+              }
+            }
+          },
+          {
+            "name": "total_amount",
+            "type": "u64"
+          },
+          {
+            "name": "allocated_amount",
+            "type": "u64"
+          },
+          {
+            "name": "released_amount",
+            "type": "u64"
+          },
+          {
+            "name": "milestone_count",
+            "type": "u32"
+          },
+          {
+            "name": "definition_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "worker_accepted",
+            "type": "bool"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "AgreementAcceptedEvent",
+      "type": {
+        "fields": [
+          {
+            "name": "agreement",
+            "type": "pubkey"
+          },
+          {
+            "name": "sponsor",
+            "type": "pubkey"
+          },
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "definition_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "total_amount",
+            "type": "u64"
+          },
+          {
+            "name": "milestone_count",
+            "type": "u32"
+          },
+          {
+            "name": "unix_timestamp",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "AgreementCancelledEvent",
+      "type": {
+        "fields": [
+          {
+            "name": "agreement",
+            "type": "pubkey"
+          },
+          {
+            "name": "sponsor",
+            "type": "pubkey"
+          },
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "refund_amount",
+            "type": "u64"
+          },
+          {
+            "name": "unix_timestamp",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "AgreementStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Draft"
+          },
+          {
+            "name": "Funded"
+          },
+          {
+            "name": "Active"
+          },
+          {
+            "name": "Completed"
+          },
+          {
+            "name": "Cancelled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EvidenceSubmittedEvent",
+      "type": {
+        "fields": [
+          {
+            "name": "agreement",
+            "type": "pubkey"
+          },
+          {
+            "name": "milestone",
+            "type": "pubkey"
+          },
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "definition_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "evidence_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "unix_timestamp",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "Milestone",
+      "type": {
+        "fields": [
+          {
+            "name": "agreement",
+            "type": "pubkey"
+          },
+          {
+            "name": "index",
+            "type": "u32"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "MilestoneStatus"
+              }
+            }
+          },
+          {
+            "name": "definition_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "evidence_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "evidence_submitted",
+            "type": "bool"
+          },
+          {
+            "name": "verifier",
+            "type": "pubkey"
+          },
+          {
+            "name": "released_amount",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "MilestoneReleasedEvent",
+      "type": {
+        "fields": [
+          {
+            "name": "agreement",
+            "type": "pubkey"
+          },
+          {
+            "name": "milestone",
+            "type": "pubkey"
+          },
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "definition_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "evidence_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "unix_timestamp",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "MilestoneStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Pending"
+          },
+          {
+            "name": "EvidenceSubmitted"
+          },
+          {
+            "name": "Verified"
+          },
+          {
+            "name": "Released"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProtocolConfig",
+      "type": {
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "payment_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "VerificationAttestedEvent",
+      "type": {
+        "fields": [
+          {
+            "name": "agreement",
+            "type": "pubkey"
+          },
+          {
+            "name": "milestone",
+            "type": "pubkey"
+          },
+          {
+            "name": "index",
+            "type": "u32"
+          },
+          {
+            "name": "verifier",
+            "type": "pubkey"
+          },
+          {
+            "name": "definition_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "evidence_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "accepted",
+            "type": "bool"
+          },
+          {
+            "name": "rejection_reason_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "unix_timestamp",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    }
+  ]
+}

@@ -99,4 +99,8 @@ The smoke-test worker keypair was generated in memory and was not persisted. Its
 
 ## Scope disclaimer
 
+<<<<<<< HEAD
 This project has not received an independent security audit or formal verification. Devnet success proves that the tested transactions completed on the deployed program; it does not establish mainnet readiness, upgrade immutability, or correctness of every edge case.
+=======
+This project has not received an independent security audit or formal verification. Devnet success proves that the tested transactions completed on the deployed program; it does not establish mainnet readiness, upgrade immutability, or correctness of every edge case.
+>>>>>>> 711363c (Describe your changes)
