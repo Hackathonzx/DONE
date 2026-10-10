@@ -77,7 +77,7 @@ await program.methods
       6
     );
 
-    
+
 
     const sponsorTokenAccount = await getOrCreateAssociatedTokenAccount(
       provider.connection,
@@ -101,6 +101,16 @@ await program.methods
       paymentMint,
       worker.publicKey
     );
+
+
+const unauthorizedWorkerTokenAccount =
+  await getOrCreateAssociatedTokenAccount(
+    provider.connection,
+    payer,
+    paymentMint,
+    unauthorizedWorker.publicKey
+  );
+
 
     const agreementId = new anchor.BN(1);
 
@@ -515,7 +525,7 @@ agreement: agreementPda,
     first = await program.account.milestone.fetch(firstPda);
     assert.ok("verified" in first.status);
 
-    async function releaseMilestone(milestonePda: anchor.web3.PublicKey) {
+    async function releaseMilestone(milestonePda: anchor.web3.PublicKey, destinationTokenAccount = workerTokenAccount.address) {
       await program.methods
         .releaseMilestone()
         .accounts({
@@ -524,11 +534,62 @@ agreement: agreementPda,
           paymentMint,
           escrowAuthority,
           escrowTokenAccount,
-          workerTokenAccount: workerTokenAccount.address,
+          workerTokenAccount: destinationTokenAccount,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
         .rpc();
     }
+
+
+      // An unverified milestone must not be paid.
+      let unverifiedReleaseRejected = false;
+
+      try {
+        await releaseMilestone(secondPda);
+      } catch (error) {
+        unverifiedReleaseRejected = true;
+        assert.include(
+          String(error),
+          "Milestone is not in the required status"
+        );
+      }
+
+      assert.isTrue(unverifiedReleaseRejected);
+
+      // A verified milestone cannot pay an unrelated worker.
+      let wrongRecipientRejected = false;
+
+      try {
+        await releaseMilestone(
+          firstPda,
+          unauthorizedWorkerTokenAccount.address
+        );
+      } catch (error) {
+        wrongRecipientRejected = true;
+        assert.include(
+          String(error),
+          "Worker token account does not belong to the assigned worker"
+        );
+      }
+
+      assert.isTrue(wrongRecipientRejected);
+
+      // Failed payouts must leave escrow and recipient balances unchanged.
+      escrow = await getAccount(provider.connection, escrowTokenAccount);
+      assert.equal(escrow.amount.toString(), "1000000");
+
+      const workerBalanceBeforeRelease = await getAccount(
+        provider.connection,
+        workerTokenAccount.address
+      );
+      assert.equal(workerBalanceBeforeRelease.amount.toString(), "0");
+
+      const unauthorizedWorkerBalance = await getAccount(
+        provider.connection,
+        unauthorizedWorkerTokenAccount.address
+      );
+      assert.equal(unauthorizedWorkerBalance.amount.toString(), "0");
+
 
     // Release milestone 0 after verification.
     await releaseMilestone(firstPda);
