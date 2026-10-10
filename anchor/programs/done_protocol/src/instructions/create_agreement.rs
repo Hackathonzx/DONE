@@ -1,7 +1,8 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::Mint;
 
-use crate::state::{Agreement, AgreementStatus};
+use crate::errors::DoneError;
+use crate::state::{Agreement, AgreementStatus, ProtocolConfig};
 
 #[derive(Accounts)]
 #[instruction(agreement_id: u64)]
@@ -14,6 +15,14 @@ pub struct CreateAgreement<'info> {
     pub worker: UncheckedAccount<'info>,
 
     pub payment_mint: Account<'info, Mint>,
+
+    #[account(
+        seeds = [b"config"],
+        bump = config.bump,
+        constraint = config.payment_mint == payment_mint.key()
+            @ DoneError::InvalidPaymentMint
+    )]
+    pub config: Account<'info, ProtocolConfig>,
 
     #[account(
         init,

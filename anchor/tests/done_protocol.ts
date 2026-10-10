@@ -43,6 +43,42 @@ describe("done_protocol", () => {
       6
     );
 
+const [configPda] =
+  anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("config")],
+    program.programId
+  );
+
+const [programDataPda] =
+  anchor.web3.PublicKey.findProgramAddressSync(
+    [program.programId.toBuffer()],
+    new anchor.web3.PublicKey("BPFLoaderUpgradeab1e11111111111111111111111")
+  );
+
+await program.methods
+  .initializeConfig()
+  .accounts({
+    authority: sponsor,
+    config: configPda,
+    paymentMint,
+    program: program.programId,
+    programData: programDataPda,
+    systemProgram: anchor.web3.SystemProgram.programId,
+  })
+  .rpc();
+
+
+    // A second valid mint used to test unsupported payment mints.
+    const invalidPaymentMint = await createMint(
+      provider.connection,
+      payer,
+      sponsor,
+      null,
+      6
+    );
+
+    
+
     const sponsorTokenAccount = await getOrCreateAssociatedTokenAccount(
       provider.connection,
       payer,
@@ -87,7 +123,8 @@ describe("done_protocol", () => {
           sponsor,
           worker: sponsor,
           paymentMint,
-          agreement: agreementPda,
+config: configPda,
+agreement: agreementPda,
           systemProgram: anchor.web3.SystemProgram.programId,
         })
         .rpc();
@@ -110,7 +147,8 @@ describe("done_protocol", () => {
           sponsor,
           worker: worker.publicKey,
           paymentMint,
-          agreement: agreementPda,
+config: configPda,
+agreement: agreementPda,
           systemProgram: anchor.web3.SystemProgram.programId,
         })
         .rpc();
@@ -120,6 +158,31 @@ describe("done_protocol", () => {
     }
     assert.isTrue(emptyAgreementHashRejected);
 
+    // A different, valid SPL Token mint must be rejected by ProtocolConfig.
+    let unsupportedMintRejected = false;
+
+    try {
+            await program.methods
+        .createAgreement(agreementId, totalAmount, definitionHash)
+        .accounts({
+          sponsor,
+          worker: worker.publicKey,
+          paymentMint: invalidPaymentMint,
+          config: configPda,
+          agreement: agreementPda,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .rpc();
+    } catch (error) {
+      unsupportedMintRejected = true;
+      assert.include(
+        String(error),
+        "Payment mint does not match the agreement"
+      );
+    }
+
+    assert.isTrue(unsupportedMintRejected);
+
     // The valid agreement creation should still succeed.
     await program.methods
       .createAgreement(agreementId, totalAmount, definitionHash)
@@ -127,6 +190,7 @@ describe("done_protocol", () => {
         sponsor,
         worker: worker.publicKey,
         paymentMint,
+        config: configPda,
         agreement: agreementPda,
         systemProgram: anchor.web3.SystemProgram.programId,
       })

@@ -13,6 +13,12 @@ declare_id!("82MCkYR3RkcqBcYWDDixbaoi4bWL8w5ohu7UkJTiZXYM");
 pub mod done_protocol {
     use super::*;
 
+    pub fn initialize_config(
+        ctx: Context<InitializeConfig>,
+    ) -> Result<()> {
+        instructions::initialize_config::handler(ctx)
+    }
+
     pub fn create_agreement(
         ctx: Context<CreateAgreement>,
         agreement_id: u64,
