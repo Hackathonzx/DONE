@@ -16,6 +16,7 @@ DONE Protocol is a Solana program for USDC-funded work agreements. A sponsor cre
 - **Devnet addresses and transactions:** [`docs/DEVNET_DEPLOYMENT_LOG.md`](https://docs.google.com/document/d/1J5rZmAObT8nhAE2GXgGYFfkh_9S9mNIjDR1JO3tvXyo/edit?usp=sharing).
 - **IDL export instructions:** [`docs/IDL_AND_SETUP.md`](https://docs.google.com/document/d/1xvlOSvJ_gefdLs5BHcXtLiZvEW99ZWbDdbR5eCGCYHk/edit?usp=sharing).
 - **Submission checklist:** [`docs/SUBMISSION_CHECKLIST.md`](https://docs.google.com/document/d/11hNi3npOYO7GrwvekcIFo13zDkYYjudhxtbyHvboOL8/edit?usp=sharing).
+- check here for deployed IDL: \docs\idl\done_protocol.devnet.json
 
 ## Devnet deployment reference
 
