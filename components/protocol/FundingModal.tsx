@@ -3,12 +3,12 @@
 import React, { useState } from 'react';
 import { AgreementAccount } from '@/types/protocol';
 import { formatUsdc, truncateAddress, DONE_PROGRAM_ID } from '@/lib/solana';
-import { protocolClient } from '@/lib/protocol/client';
 import { useWallet } from '../web3/WalletContext';
 import { Button } from '../ui/Button';
 import { SlideDrawer } from '../ui/SlideDrawer';
 import { PublicKey } from '@solana/web3.js';
-import { Lock, Droplets, ArrowRight } from 'lucide-react';
+import { Lock, ArrowRight } from 'lucide-react';
+import { executeOnChainFundAgreement } from '@/lib/protocol/anchorClient';
 
 interface FundingModalProps {
   agreement: AgreementAccount;
@@ -17,12 +17,12 @@ interface FundingModalProps {
   onExecute: (
     actionName: string,
     instructionSummary: string,
-    fn: () => Promise<{ signature: string; vaultPda: PublicKey }>
+    fn: () => Promise<{ signature: string }>
   ) => Promise<any>;
 }
 
 export function FundingModal({ agreement, isOpen, onClose, onExecute }: FundingModalProps) {
-  const { usdcBalance, requestDevnetUsdcFaucet, deductUsdc } = useWallet();
+  const { publicKey, signTransaction, usdcBalance, refreshBalances } = useWallet();
   const [funding, setFunding] = useState(false);
 
   if (!isOpen) return null;
@@ -31,18 +31,20 @@ export function FundingModal({ agreement, isOpen, onClose, onExecute }: FundingM
   const hasSufficientUsdc = usdcBalance >= totalRequired;
 
   const handleFund = async () => {
+    if (!publicKey) return;
     setFunding(true);
     try {
       await onExecute(
         'fundAgreement',
-        `Locking ${formatUsdc(totalRequired)} USDC into Vault PDA (${truncateAddress(agreement.vaultPda, 4)})`,
+        `Transferring $${formatUsdc(totalRequired)} USDC into Vault PDA (${truncateAddress(agreement.vaultPda, 4)})`,
         async () => {
-          const res = await protocolClient.fundAgreement({
-            agreement: new PublicKey(agreement.publicKey),
-            amount: totalRequired,
-          });
-          deductUsdc(totalRequired);
-          return res;
+          const sig = await executeOnChainFundAgreement(
+            publicKey,
+            new PublicKey(agreement.publicKey),
+            { signTransaction }
+          );
+          await refreshBalances();
+          return { signature: sig };
         }
       );
       onClose();
@@ -91,17 +93,16 @@ export function FundingModal({ agreement, isOpen, onClose, onExecute }: FundingM
         {!hasSufficientUsdc && (
           <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-300 space-y-2">
             <p className="text-[11px]">
-              Your wallet balance is below the required agreement amount. Use the Devnet faucet to mint test USDC.
+              Your wallet balance is below the required agreement amount. Request Devnet USDC from the Circle Testnet Faucet.
             </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full text-xs text-violet-300 border-violet-500/30 hover:bg-violet-950/30"
-              onClick={() => requestDevnetUsdcFaucet(totalRequired)}
+            <a
+              href="https://faucet.circle.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block text-xs text-violet-300 underline font-semibold"
             >
-              <Droplets className="w-3.5 h-3.5 mr-1 text-violet-400" />
-              Airdrop +${formatUsdc(totalRequired)} Devnet USDC
-            </Button>
+              Get Devnet USDC at Circle Faucet ↗
+            </a>
           </div>
         )}
 
@@ -120,6 +121,7 @@ export function FundingModal({ agreement, isOpen, onClose, onExecute }: FundingM
             onClick={handleFund}
             disabled={!hasSufficientUsdc || funding}
             isLoading={funding}
+            className="bg-emerald-600 hover:bg-emerald-500 font-bold"
           >
             Lock USDC into Escrow
             <ArrowRight className="w-3.5 h-3.5 ml-1" />

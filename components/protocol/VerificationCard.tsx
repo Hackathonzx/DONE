@@ -2,40 +2,43 @@
 
 import React, { useState } from 'react';
 import { MilestoneAccount, MilestoneState } from '@/types/protocol';
-import { truncateAddress, formatUsdc, getExplorerUrl } from '@/lib/solana';
-import { protocolClient } from '@/lib/protocol/client';
+import { formatUsdc, truncateAddress, getExplorerUrl } from '@/lib/solana';
+import { executeOnChainVerifyEvidence, executeOnChainReleaseMilestone } from '@/lib/protocol/anchorClient';
+import { useWallet } from '@/components/web3/WalletContext';
 import { PublicKey } from '@solana/web3.js';
+import { Card, CardHeader, CardContent, CardFooter } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Textarea } from '../ui/Input';
-import { Card, CardHeader, CardContent, CardFooter } from '../ui/Card';
 import {
-  CheckCircle2,
-  ExternalLink,
   ShieldCheck,
   Coins,
-  FileCheck,
+  CheckCircle2,
+  ExternalLink,
   Lock,
+  FileCheck,
 } from 'lucide-react';
 
 interface VerificationCardProps {
   agreementKey: string;
   milestone: MilestoneAccount;
-  isVerifierOrSponsor: boolean;
+  workerAddress: string;
   onExecute: (
     actionName: string,
     instructionSummary: string,
-    fn: () => Promise<any>
+    fn: () => Promise<{ signature: string }>
   ) => Promise<any>;
 }
 
 export function VerificationCard({
   agreementKey,
   milestone,
+  workerAddress,
   onExecute,
 }: VerificationCardProps) {
+  const { publicKey, signTransaction } = useWallet();
   const [checkedCriteria, setCheckedCriteria] = useState<Record<number, boolean>>({});
   const [verificationNotes, setVerificationNotes] = useState(
-    'Reviewed evidence artifacts and verified all canonical Definition of Done criteria are satisfied.'
+    'Audited target program on Solana Devnet: program exists, is executable, owned by Upgradeable Loader, and ProgramData PDA is linked.'
   );
   const [isVerifying, setIsVerifying] = useState(false);
   const [isReleasing, setIsReleasing] = useState(false);
@@ -52,17 +55,20 @@ export function VerificationCard({
     milestone.dodCriteria.every((_, idx) => checkedCriteria[idx]);
 
   const handleVerify = async () => {
+    if (!publicKey) return;
     setIsVerifying(true);
     try {
       await onExecute(
-        'verifyMilestone',
-        `Verifying Milestone #${milestone.index} DoD criteria fulfillment`,
+        'verifyEvidence',
+        `Attesting on-chain verification for Milestone #${milestone.index + 1}`,
         async () => {
-          return protocolClient.verifyMilestone({
-            agreement: new PublicKey(agreementKey),
-            milestoneIndex: milestone.index,
-            notes: verificationNotes,
-          });
+          const sig = await executeOnChainVerifyEvidence(
+            publicKey,
+            new PublicKey(agreementKey),
+            new PublicKey(milestone.publicKey),
+            { signTransaction }
+          );
+          return { signature: sig };
         }
       );
     } finally {
@@ -71,16 +77,21 @@ export function VerificationCard({
   };
 
   const handleRelease = async () => {
+    if (!publicKey) return;
     setIsReleasing(true);
     try {
       await onExecute(
-        'releasePayment',
-        `Releasing ${formatUsdc(milestone.amountUsdc)} USDC from Escrow Vault to Worker ATA`,
+        'releaseMilestone',
+        `Releasing $${formatUsdc(milestone.amountUsdc)} USDC to Worker ATA (${truncateAddress(workerAddress, 4)})`,
         async () => {
-          return protocolClient.releasePayment({
-            agreement: new PublicKey(agreementKey),
-            milestoneIndex: milestone.index,
-          });
+          const sig = await executeOnChainReleaseMilestone(
+            publicKey,
+            new PublicKey(agreementKey),
+            new PublicKey(milestone.publicKey),
+            new PublicKey(workerAddress),
+            { signTransaction }
+          );
+          return { signature: sig };
         }
       );
     } finally {
@@ -88,23 +99,25 @@ export function VerificationCard({
     }
   };
 
-  // 1. If released, show terminal settlement card
   if (milestone.state === MilestoneState.RELEASED) {
     return (
-      <Card className="border-emerald-500/30 font-mono">
+      <Card className="border-emerald-500/40 font-mono">
         <CardHeader>
           <div className="flex items-center gap-2 text-emerald-400">
             <CheckCircle2 className="w-4 h-4" />
             <h3 className="font-bold text-sm tracking-wider uppercase">
-              MILESTONE SETTLED & FUNDS RELEASED
+              MILESTONE SETTLED & PAID
             </h3>
           </div>
-          <span className="text-[11px] text-emerald-400 font-bold">TERMINAL STATE</span>
+          <span className="text-[11px] text-emerald-300 font-bold">100% COMPLETE</span>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-3">
+          <p className="text-xs text-neutral-400">
+            Funds for this milestone have been disbursed from the protocol escrow vault directly to the assigned worker token account on Solana Devnet.
+          </p>
           <div className="p-4 bg-[#000000] border border-[#26262a] rounded-xl space-y-2 text-xs">
             <div className="flex justify-between items-center">
-              <span className="text-neutral-400">SETTLED VALUE:</span>
+              <span className="text-neutral-400">RELEASED VALUE:</span>
               <span className="text-base font-bold text-emerald-400">
                 ${formatUsdc(milestone.amountUsdc)} USDC
               </span>
@@ -123,21 +136,12 @@ export function VerificationCard({
                 </a>
               </div>
             )}
-            {milestone.releasedAt && (
-              <div className="flex justify-between items-center text-[11px]">
-                <span className="text-neutral-400">TIMESTAMP:</span>
-                <span className="text-neutral-300">
-                  {new Date(milestone.releasedAt).toLocaleString()}
-                </span>
-              </div>
-            )}
           </div>
         </CardContent>
       </Card>
     );
   }
 
-  // 2. If verified, show settlement release trigger
   if (milestone.state === MilestoneState.VERIFIED) {
     return (
       <Card className="border-violet-500/30 font-mono">
@@ -152,9 +156,8 @@ export function VerificationCard({
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-xs text-neutral-400">
-            Definition of Done criteria have been cryptographically verified by the authorized party. The protocol escrow vault is now unlocked for settlement release to the worker’s USDC token account.
+            Definition of Done criteria have been verified on-chain. Escrow is unlocked for settlement release to the worker&apos;s USDC token account.
           </p>
-
           <div className="p-4 bg-[#000000] border border-[#26262a] rounded-xl space-y-2 text-xs">
             <div className="flex justify-between items-center">
               <span className="text-neutral-400">CLAIMABLE VALUE:</span>
@@ -165,20 +168,14 @@ export function VerificationCard({
             <div className="flex justify-between items-center">
               <span className="text-neutral-400">VERIFIED BY:</span>
               <span className="text-neutral-300 font-mono text-[11px]">
-                {truncateAddress(milestone.verification?.verifiedBy, 8)}
+                {truncateAddress(milestone.verifier, 8)}
               </span>
             </div>
-            {milestone.verification?.notes && (
-              <div className="pt-2 border-t border-[#26262a] text-[11px] text-neutral-400">
-                <span className="font-semibold text-neutral-300 block mb-0.5">VERIFIER NOTES:</span>
-                {milestone.verification.notes}
-              </div>
-            )}
           </div>
         </CardContent>
         <CardFooter className="justify-between">
           <span className="text-[11px] text-neutral-500">
-            Escrow Vault ready to transfer USDC to Worker ATA
+            Escrow ready to transfer USDC to Worker ATA
           </span>
           <Button
             variant="primary"
@@ -186,6 +183,7 @@ export function VerificationCard({
             onClick={handleRelease}
             disabled={isReleasing}
             isLoading={isReleasing}
+            className="bg-emerald-600 hover:bg-emerald-500 font-bold text-white"
           >
             <Coins className="w-4 h-4 mr-2" />
             Release Payment (${formatUsdc(milestone.amountUsdc)} USDC)
@@ -195,7 +193,6 @@ export function VerificationCard({
     );
   }
 
-  // 3. If evidence is submitted, show verification audit view
   if (milestone.state === MilestoneState.EVIDENCE_SUBMITTED) {
     return (
       <Card className="border-amber-500/30 font-mono">
@@ -212,8 +209,6 @@ export function VerificationCard({
           <p className="text-xs text-neutral-400">
             As the designated verifier ({truncateAddress(milestone.verifier, 6)}), check off each Definition of Done item against the submitted artifacts before confirming block verification.
           </p>
-
-          {/* Criteria Checklist */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-xs font-semibold text-neutral-300 tracking-wider uppercase block">
@@ -258,8 +253,6 @@ export function VerificationCard({
               ))}
             </div>
           </div>
-
-          {/* Verifier Notes */}
           <Textarea
             label="VERIFICATION AUDIT SIGN-OFF NOTES"
             rows={2}
@@ -268,7 +261,6 @@ export function VerificationCard({
             required
           />
         </CardContent>
-
         <CardFooter className="justify-between">
           <span className="text-[11px] text-neutral-500">
             {allCriteriaChecked
@@ -281,6 +273,7 @@ export function VerificationCard({
             onClick={handleVerify}
             disabled={!allCriteriaChecked || isVerifying}
             isLoading={isVerifying}
+            className="bg-violet-600 hover:bg-violet-500 font-bold"
           >
             <ShieldCheck className="w-4 h-4 mr-2" />
             Sign & Verify Milestone on Chain
@@ -290,7 +283,6 @@ export function VerificationCard({
     );
   }
 
-  // 4. Milestone is PENDING (Work in progress)
   return (
     <Card className="font-mono">
       <CardHeader>

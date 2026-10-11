@@ -1,218 +1,249 @@
 'use client';
 
-import React, { useState } from 'react';
-import { PublicKey } from '@solana/web3.js';
-import { useQueryClient } from '@tanstack/react-query';
-import { VerificationType } from '@/types/protocol';
-import { hashAgreementTerms, hashDoDCriteria } from '@/lib/protocol/hashing';
-import { protocolClient } from '@/lib/protocol/client';
-import { useWallet } from '@/components/web3/WalletContext';
-import { AGREEMENTS_QUERY_KEY } from '@/hooks/useAgreement';
-import { DoneLogo } from './DoneLogo';
+import React, { useState, useEffect } from 'react';
+import { useWallet } from '../web3/WalletContext';
 import { Button } from '../ui/Button';
-import { Input } from '../ui/Input';
-import { X, Check, ArrowRight, ShieldCheck, Plus, Sparkles, Layers, Lock } from 'lucide-react';
+import { Input, Textarea } from '../ui/Input';
 import { formatUsdc } from '@/lib/solana';
+import { PublicKey } from '@solana/web3.js';
+import BN from 'bn.js';
+import {
+  executeOnChainCreateAgreement,
+} from '@/lib/protocol/anchorClient';
+import { prepareAccountVerificationRecipe } from '@/lib/protocol/recipe';
+import { saveOffchainMetadata } from '@/lib/protocol/metadataStore';
+import { hashAgreementTerms } from '@/lib/protocol/hashing';
+import {
+  X,
+  Plus,
+  Trash2,
+  Lock,
+  ArrowRight,
+  ShieldCheck,
+  Layers,
+  Sparkles,
+  ExternalLink,
+} from 'lucide-react';
+import { DoneLogo } from './DoneLogo';
+
+interface MilestoneDraft {
+  title: string;
+  amountUsdc: number; // in micro-USDC (6 decimals)
+  description: string;
+  dodCriteria: string[];
+  verifier: string;
+}
 
 interface CreateAgreementDrawerProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: (agreementKey: string) => void;
+  onSuccess: (agreementPda: string) => void;
 }
 
-const TEMPLATES = [
-  {
-    name: 'Smart Contract Audit',
-    title: 'Solana Program Security Audit',
-    terms: 'Comprehensive vulnerability assessment and fuzz test verification.',
-    budget: 8_000_000_000,
-    milestones: [
-      { title: 'Threat Modeling & Invariant Check', amount: 3_000_000_000, dod: ['Threat model document', 'Slither / cargo audit run'] },
-      { title: 'Final Remediation & Audit Report', amount: 5_000_000_000, dod: ['Executive summary signed', 'Remediation PR verified'] },
-    ],
-  },
-  {
-    name: 'Full-Stack Web3 App',
-    title: 'Escrow DApp Frontend & Integration',
-    terms: 'Responsive web application with Solana wallet adapter and anchor bindings.',
-    budget: 5_000_000_000,
-    milestones: [
-      { title: 'UI Implementation & Design System', amount: 2_500_000_000, dod: ['Figma design implemented', 'Dark mode with violet accent'] },
-      { title: 'On-Chain Integration & Release', amount: 2_500_000_000, dod: ['Devnet transactions confirmed', 'PR merged to main'] },
-    ],
-  },
-  {
-    name: 'Indexer & Backend',
-    title: 'Solana RPC Event Streaming Pipeline',
-    terms: 'Geyser indexer pipeline with database ingestion and GraphQL API.',
-    budget: 6_000_000_000,
-    milestones: [
-      { title: 'Indexer Ingestion Engine', amount: 3_000_000_000, dod: ['Zero dropped slots in 24h', 'Postgres migrations applied'] },
-      { title: 'API Queries & Load Test', amount: 3_000_000_000, dod: ['GraphQL query endpoints', 'k6 stress test p95 < 50ms'] },
-    ],
-  },
-];
+export function CreateAgreementDrawer({
+  isOpen,
+  onClose,
+  onSuccess,
+}: CreateAgreementDrawerProps) {
+  const { connected, publicKey, publicKeyString, signTransaction } = useWallet();
 
-export function CreateAgreementDrawer({ isOpen, onClose, onSuccess }: CreateAgreementDrawerProps) {
-  const queryClient = useQueryClient();
-  const { publicKey, publicKeyString } = useWallet();
-
-  const [step, setStep] = useState<1 | 2>(1); // 1 = Details & Milestones, 2 = Confirm & Authorize
-  const [title, setTitle] = useState('');
+  const [step, setStep] = useState<1 | 2>(1);
+  const [title, setTitle] = useState('Devnet Smart Contract Audit & Delivery');
+  const [description, setDescription] = useState(
+    'Audit Solana program deployment against canonical Definition of Done checks on Devnet.'
+  );
+  const [termsText, setTermsText] = useState(
+    'Payment released strictly upon on-chain attestation of verifiable Definition of Done criteria.'
+  );
   const [workerAddress, setWorkerAddress] = useState('');
-  const [termsText, setTermsText] = useState('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const [milestones, setMilestones] = useState<Array<{ title: string; amountUsdc: number; dodCriteria: string[] }>>([
+  // Prepared recipe cache
+  const [preparedRecipe, setPreparedRecipe] = useState<{
+    definitionHashHex: string;
+    definitionHashBytes: number[];
+  } | null>(null);
+
+  // Initialize milestone drafts
+  const [milestones, setMilestones] = useState<MilestoneDraft[]>([
     {
-      title: '',
-      amountUsdc: 1_000_000_000,
-      dodCriteria: [''],
+      title: 'Milestone 1: Automated Program-Account Verification',
+      amountUsdc: 1_000_000, // 1 USDC
+      description: 'Account existence, executable flag, upgradeable loader owner, and ProgramData linkage.',
+      dodCriteria: [
+        'Program account exists on Solana Devnet cluster',
+        'Target account is executable',
+        'Owner is BPFLoaderUpgradeab1e11111111111111111111111',
+        'ProgramData PDA matches and points to valid state',
+      ],
+      verifier: '',
     },
   ]);
+
+  // Load the canonical recipe hashes on open
+  useEffect(() => {
+    let active = true;
+    if (isOpen) {
+      prepareAccountVerificationRecipe()
+        .then((recipe) => {
+          if (active) {
+            setPreparedRecipe({
+              definitionHashHex: recipe.definitionHashHex,
+              definitionHashBytes: recipe.definitionHashBytes,
+            });
+            // Default verifier to current connected wallet
+            if (publicKeyString) {
+              setMilestones((prev) =>
+                prev.map((m) => ({
+                  ...m,
+                  verifier: m.verifier || publicKeyString,
+                }))
+              );
+            }
+          }
+        })
+        .catch(console.error);
+    }
+    return () => {
+      active = false;
+    };
+  }, [isOpen, publicKeyString]);
 
   if (!isOpen) return null;
 
   const totalBudget = milestones.reduce((sum, m) => sum + m.amountUsdc, 0);
 
-  const applyTemplate = (tpl: typeof TEMPLATES[0]) => {
-    setTitle(tpl.title);
-    setTermsText(tpl.terms);
-    setMilestones(
-      tpl.milestones.map((m) => ({
-        title: m.title,
-        amountUsdc: m.amount,
-        dodCriteria: m.dod,
-      }))
-    );
-  };
-
   const handleCreate = async () => {
-    setError(null);
-    if (!title.trim()) {
-      setError('Title is required');
+    setErrorMsg(null);
+    if (!connected || !publicKey) {
+      setErrorMsg('Please connect your Solana wallet (Phantom or Solflare).');
       return;
     }
 
-    let workerPubkey: PublicKey;
+    let workerPk: PublicKey;
     try {
-      if (workerAddress.trim()) {
-        workerPubkey = new PublicKey(workerAddress.trim());
-      } else {
-        setError('Worker Solana address is required');
-        return;
-      }
+      workerPk = new PublicKey(workerAddress.trim());
     } catch {
-      setError('Invalid Worker Solana address format');
+      setErrorMsg('Invalid worker Solana public key. Please enter a valid base58 address.');
       return;
     }
 
-    if (!publicKey) {
-      setError('Please connect your sponsor wallet to initialize this agreement');
+    if (workerPk.equals(publicKey)) {
+      setErrorMsg('Worker address must be different from the Sponsor address.');
+      return;
+    }
+
+    if (milestones.length === 0) {
+      setErrorMsg('Please add at least one milestone.');
+      return;
+    }
+
+    if (totalBudget <= 0) {
+      setErrorMsg('Total escrow amount must be greater than 0.');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const termsHash = await hashAgreementTerms(termsText);
-      const { agreementPda } = await protocolClient.createAgreement({
-        sponsor: publicKey,
-        worker: workerPubkey,
-        termsHash,
-        milestoneCount: milestones.length,
+      // 1. Compute definition hashes
+      const recipe = preparedRecipe || (await prepareAccountVerificationRecipe());
+      const termsHash = await hashAgreementTerms({
         title,
-        description: termsText,
+        description,
         termsText,
       });
 
-      for (let i = 0; i < milestones.length; i++) {
-        const m = milestones[i];
-        const dodHash = await hashDoDCriteria(m.dodCriteria);
-        await protocolClient.createMilestone({
-          agreement: agreementPda,
-          index: i,
-          amount: m.amountUsdc,
-          dodHash,
-          verificationType: VerificationType.SPONSOR,
-          title: m.title,
-          description: m.title,
-          dodCriteria: m.dodCriteria,
-        });
-      }
+      const agreementIdBn = new BN(Date.now());
+      const totalAmountBn = new BN(totalBudget);
 
-      await queryClient.invalidateQueries({ queryKey: AGREEMENTS_QUERY_KEY });
+      const milestoneParams = milestones.map((m, idx) => {
+        let vPk: PublicKey;
+        try {
+          vPk = new PublicKey(m.verifier.trim() || publicKeyString);
+        } catch {
+          vPk = publicKey;
+        }
+        return {
+          index: idx,
+          amountRaw: new BN(m.amountUsdc),
+          definitionHash32: new Uint8Array(recipe.definitionHashBytes),
+          verifier: vPk,
+        };
+      });
+
+      // 2. Dispatch real on-chain transaction
+      const { signature, agreementPda } = await executeOnChainCreateAgreement(
+        publicKey,
+        workerPk,
+        agreementIdBn,
+        totalAmountBn,
+        new Uint8Array(recipe.definitionHashBytes),
+        milestoneParams,
+        { signTransaction }
+      );
+
+      // 3. Store offchain metadata (human titles, descriptions, criteria) linked by agreementPda
+      saveOffchainMetadata({
+        agreementPda,
+        title,
+        description,
+        termsText,
+        createdAt: Date.now(),
+        milestones: milestones.map((m, idx) => ({
+          index: idx,
+          title: m.title,
+          description: m.description,
+          dodCriteria: m.dodCriteria,
+          verificationMethodLabel: 'Solana Program-Account Verification',
+        })),
+      });
+
+      onSuccess(agreementPda);
       onClose();
-      if (onSuccess) {
-        onSuccess(agreementPda.toBase58());
-      }
-    } catch (err) {
-      console.error(err);
-      setError((err as Error).message || 'Failed to create agreement');
+    } catch (err: any) {
+      console.error('Create agreement error:', err);
+      setErrorMsg(err?.message || 'Transaction rejected by wallet or failed on Devnet.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden font-mono text-neutral-100">
-      {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onClick={onClose} />
-
-      {/* Drawer */}
-      <div className="fixed inset-x-0 bottom-0 md:inset-x-auto md:right-0 md:top-0 md:h-full w-full md:w-[540px] bg-[#000000] border-t md:border-t-0 md:border-l border-[#26262a] rounded-t-3xl md:rounded-none z-50 max-h-[92vh] md:max-h-full flex flex-col shadow-2xl animate-in slide-in-from-bottom md:slide-in-from-right duration-200">
-        {/* Header with Done Logo */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#26262a] bg-[#000000]">
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-sm animate-in fade-in duration-200 font-mono text-neutral-100">
+      <div className="w-full max-w-xl bg-[#000000] border-l border-[#26262a] h-full flex flex-col shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="p-5 border-b border-[#26262a] flex items-center justify-between">
           <div className="flex items-center gap-3">
             <DoneLogo className="w-7 h-7" />
             <div>
-              <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                Create Escrow Agreement
-                <span className="text-[10px] text-violet-400 bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded-full font-semibold">
-                  LIVE
-                </span>
+              <h2 className="text-sm font-bold text-white tracking-wider">
+                NEW ESCROW AGREEMENT
               </h2>
-              <p className="text-[11px] text-neutral-400">Step {step} of 2</p>
+              <span className="text-[10px] text-violet-400 font-medium">
+                Live Solana Devnet Program
+              </span>
             </div>
           </div>
           <button
             onClick={onClose}
             className="p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-900 transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Content Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-5 bg-[#000000]">
-          {error && (
-            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
-              {error}
+        {/* Form Body */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {errorMsg && (
+            <div className="p-3 bg-rose-950/40 border border-rose-500/40 rounded-xl text-xs text-rose-300">
+              {errorMsg}
             </div>
           )}
 
           {step === 1 ? (
             <>
-              {/* Presets */}
-              <div>
-                <span className="text-[10px] uppercase tracking-wider text-neutral-400 font-bold block mb-2">
-                  Quick Templates
-                </span>
-                <div className="grid grid-cols-3 gap-2">
-                  {TEMPLATES.map((tpl) => (
-                    <button
-                      key={tpl.name}
-                      onClick={() => applyTemplate(tpl)}
-                      className="px-2.5 py-2 rounded-xl bg-[#000000] hover:bg-violet-950/30 hover:border-violet-500/40 border border-[#26262a] text-left transition-colors text-[11px]"
-                    >
-                      <span className="font-semibold text-white block truncate">{tpl.name}</span>
-                      <span className="text-violet-400 text-[10px]">${formatUsdc(tpl.budget)}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Title */}
+              {/* Title & Description */}
               <div>
                 <label className="text-[11px] uppercase tracking-wider text-neutral-300 font-semibold block mb-1.5">
                   Agreement Title
@@ -220,8 +251,20 @@ export function CreateAgreementDrawer({ isOpen, onClose, onSuccess }: CreateAgre
                 <Input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Audit Assessment"
+                  placeholder="e.g. Smart Contract Security Audit"
                   className="bg-[#000000] border-[#26262a] text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] uppercase tracking-wider text-neutral-300 font-semibold block mb-1.5">
+                  Scope & Deliverable Description
+                </label>
+                <Textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={2}
+                  className="bg-[#000000] border-[#26262a] text-xs"
                 />
               </div>
 
@@ -229,123 +272,141 @@ export function CreateAgreementDrawer({ isOpen, onClose, onSuccess }: CreateAgre
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-[11px] uppercase tracking-wider text-neutral-300 font-semibold">
-                    Worker / Beneficiary Address
+                    Assigned Worker Address
                   </label>
-                  {publicKeyString && (
-                    <button
-                      type="button"
-                      onClick={() => setWorkerAddress(publicKeyString)}
-                      className="text-[10px] text-violet-400 hover:text-violet-300 underline"
-                    >
-                      Use my address
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setWorkerAddress('8mxRTwLkh6pPDJKiRViYJfnywUNcTToGsQhHoGkQYz7b')}
+                    className="text-[10px] text-violet-400 hover:text-violet-300 underline"
+                  >
+                    Use Smoke-Test Worker
+                  </button>
                 </div>
                 <Input
                   value={workerAddress}
                   onChange={(e) => setWorkerAddress(e.target.value)}
-                  placeholder={publicKeyString ? `Default: ${publicKeyString.slice(0, 12)}...` : 'Solana PublicKey (base58)'}
+                  placeholder="Recipient Solana PublicKey (base58, e.g. 8mxR...Yz7b)"
                   className="bg-[#000000] border-[#26262a] text-xs font-mono"
                 />
+                <span className="text-[10px] text-neutral-500 mt-1 block">
+                  Must be a distinct Solana address from the Sponsor.
+                </span>
               </div>
 
-              {/* Milestones */}
-              <div className="space-y-3 pt-2 border-t border-[#26262a]">
+              {/* Milestones & Verification Method */}
+              <div className="space-y-3 pt-3 border-t border-[#26262a]">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] uppercase tracking-wider text-neutral-300 font-semibold flex items-center gap-1.5">
                     <Layers className="w-3.5 h-3.5 text-violet-400" />
                     Milestones ({milestones.length})
                   </span>
-                  {milestones.length < 4 && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setMilestones([
-                          ...milestones,
-                          {
-                            title: `Milestone #${milestones.length + 1}`,
-                            amountUsdc: 1_000_000_000,
-                            dodCriteria: ['Standard deliverable review'],
-                          },
-                        ])
-                      }
-                      className="flex items-center gap-1 text-[11px] text-violet-400 hover:text-violet-300 px-2 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20"
-                    >
-                      <Plus className="w-3 h-3" /> Add
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-neutral-400">
+                      Recipe: Account Check DoD
+                    </span>
+                  </div>
                 </div>
 
-                <div className="space-y-2.5">
-                  {milestones.map((m, idx) => (
-                    <div key={idx} className="p-3 bg-[#000000] rounded-xl border border-[#26262a] space-y-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-bold text-violet-400">#{idx + 1}</span>
+                {milestones.map((m, idx) => (
+                  <div key={idx} className="p-3 bg-[#000000] rounded-xl border border-[#26262a] space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-violet-400">#{idx + 1}</span>
+                      <input
+                        type="text"
+                        value={m.title}
+                        onChange={(e) => {
+                          const updated = [...milestones];
+                          updated[idx].title = e.target.value;
+                          setMilestones(updated);
+                        }}
+                        className="flex-1 bg-transparent border-b border-[#26262a] focus:border-violet-500 text-xs text-white pb-0.5 outline-none"
+                      />
+                      <div className="flex items-center gap-1 text-xs">
+                        <span className="text-neutral-500">$</span>
                         <input
-                          type="text"
-                          value={m.title}
+                          type="number"
+                          step="0.1"
+                          value={m.amountUsdc / 1e6}
                           onChange={(e) => {
                             const updated = [...milestones];
-                            updated[idx].title = e.target.value;
+                            const val = parseFloat(e.target.value) || 0;
+                            updated[idx].amountUsdc = Math.round(val * 1e6);
                             setMilestones(updated);
                           }}
-                          className="flex-1 bg-transparent border-b border-[#26262a] focus:border-violet-500 text-xs text-white pb-0.5 outline-none"
+                          className="w-20 bg-[#000000] border border-[#26262a] rounded px-1.5 py-0.5 text-right font-semibold text-white text-xs outline-none focus:border-violet-500"
                         />
-                        <div className="flex items-center gap-1 text-xs">
-                          <span className="text-neutral-500">$</span>
-                          <input
-                            type="number"
-                            value={m.amountUsdc / 1e6}
-                            onChange={(e) => {
-                              const updated = [...milestones];
-                              const val = parseFloat(e.target.value) || 0;
-                              updated[idx].amountUsdc = Math.round(val * 1e6);
-                              setMilestones(updated);
-                            }}
-                            className="w-16 bg-[#000000] border border-[#26262a] rounded px-1.5 py-0.5 text-right font-semibold text-white text-xs outline-none focus:border-violet-500"
-                          />
-                        </div>
+                        <span className="text-neutral-500 text-[10px]">USDC</span>
                       </div>
                     </div>
-                  ))}
-                </div>
 
-                <div className="flex items-center justify-between p-3 rounded-xl bg-violet-950/20 border border-violet-500/30 text-xs">
-                  <span className="text-neutral-300">Total Escrow Value:</span>
-                  <span className="text-base font-bold text-violet-300">${formatUsdc(totalBudget)} USDC</span>
+                    <div className="pt-1">
+                      <label className="text-[10px] text-neutral-400 block mb-1">
+                        Assigned Verifier (audits & attests evidence):
+                      </label>
+                      <input
+                        type="text"
+                        value={m.verifier}
+                        onChange={(e) => {
+                          const updated = [...milestones];
+                          updated[idx].verifier = e.target.value;
+                          setMilestones(updated);
+                        }}
+                        placeholder={publicKeyString || 'Verifier Solana PublicKey'}
+                        className="w-full bg-[#000000] border border-[#26262a] rounded px-2 py-1 text-[11px] font-mono text-neutral-200 outline-none focus:border-violet-500"
+                      />
+                    </div>
+                  </div>
+                ))}
+
+                {/* On-chain DoD commitment info */}
+                <div className="p-3 rounded-xl bg-violet-950/20 border border-violet-500/30 text-xs space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-neutral-300">Total Escrow Allocation:</span>
+                    <span className="text-base font-bold text-violet-300">
+                      ${formatUsdc(totalBudget)} USDC
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-neutral-400 flex items-center justify-between border-t border-violet-500/20 pt-1">
+                    <span>Supported Verification:</span>
+                    <span className="text-violet-300">Solana Account-Check Recipe</span>
+                  </div>
                 </div>
               </div>
             </>
           ) : (
-            /* Step 2: Confirm & Authorize */
+            /* Step 2: Confirmation */
             <div className="space-y-4 py-2">
               <div className="flex flex-col items-center justify-center p-6 rounded-2xl bg-[#000000] border border-[#26262a] text-center">
                 <DoneLogo className="w-14 h-14 mb-3" />
                 <h3 className="text-base font-bold text-white mb-1">{title}</h3>
-                <p className="text-xs text-neutral-400 mb-3">{milestones.length} Milestones • Deterministic Payouts</p>
-                <div className="text-2xl font-black text-violet-400 mb-1">${formatUsdc(totalBudget)} USDC</div>
-                <span className="text-[10px] text-neutral-500 uppercase tracking-widest">Locked Value upon funding</span>
+                <p className="text-xs text-neutral-400 mb-3">
+                  {milestones.length} Milestone(s) • Live Devnet Escrow
+                </p>
+                <div className="text-2xl font-black text-violet-400 mb-1">
+                  ${formatUsdc(totalBudget)} USDC
+                </div>
+                <span className="text-[10px] text-neutral-500 uppercase tracking-widest">
+                  Transferred into escrow upon Sponsor funding
+                </span>
               </div>
 
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between items-center p-3 rounded-xl bg-[#000000] border border-[#26262a]">
                   <span className="text-neutral-400">Sponsor:</span>
                   <span className="text-violet-300 font-mono text-[11px]">
-                    {publicKeyString ? `${publicKeyString.slice(0, 10)}...${publicKeyString.slice(-6)}` : 'Connected Wallet'}
+                    {publicKeyString ? `${publicKeyString.slice(0, 8)}...${publicKeyString.slice(-6)}` : 'Connected'}
                   </span>
                 </div>
-
                 <div className="flex justify-between items-center p-3 rounded-xl bg-[#000000] border border-[#26262a]">
-                  <span className="text-neutral-400">Beneficiary:</span>
+                  <span className="text-neutral-400">Assigned Worker:</span>
                   <span className="text-violet-300 font-mono text-[11px]">
-                    {workerAddress ? `${workerAddress.slice(0, 10)}...${workerAddress.slice(-6)}` : 'Active Wallet'}
+                    {workerAddress ? `${workerAddress.slice(0, 8)}...${workerAddress.slice(-6)}` : ''}
                   </span>
                 </div>
-
                 <div className="flex justify-between items-center p-3 rounded-xl bg-[#000000] border border-[#26262a]">
-                  <span className="text-neutral-400">Escrow Security:</span>
-                  <span className="text-emerald-400 font-semibold flex items-center gap-1">
-                    <Lock className="w-3 h-3" /> Non-Custodial Vault PDA
+                  <span className="text-neutral-400">DoD Commitment:</span>
+                  <span className="text-emerald-400 font-mono text-[10px] truncate max-w-[200px]">
+                    {preparedRecipe?.definitionHashHex ? `${preparedRecipe.definitionHashHex.slice(0, 16)}...` : 'SHA-256'}
                   </span>
                 </div>
               </div>
@@ -353,7 +414,7 @@ export function CreateAgreementDrawer({ isOpen, onClose, onSuccess }: CreateAgre
           )}
         </div>
 
-        {/* Drawer Footer Actions */}
+        {/* Footer */}
         <div className="p-5 border-t border-[#26262a] bg-[#000000] flex items-center justify-between gap-3">
           {step === 1 ? (
             <>
@@ -366,7 +427,14 @@ export function CreateAgreementDrawer({ isOpen, onClose, onSuccess }: CreateAgre
               </button>
               <Button
                 variant="primary"
-                onClick={() => setStep(2)}
+                onClick={() => {
+                  if (!workerAddress.trim()) {
+                    setErrorMsg('Please specify the worker Solana address.');
+                    return;
+                  }
+                  setErrorMsg(null);
+                  setStep(2);
+                }}
                 className="flex items-center gap-2"
               >
                 Review & Confirm <ArrowRight className="w-4 h-4" />
@@ -385,9 +453,9 @@ export function CreateAgreementDrawer({ isOpen, onClose, onSuccess }: CreateAgre
                 variant="primary"
                 isLoading={isSubmitting}
                 onClick={handleCreate}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500"
               >
-                <ShieldCheck className="w-4 h-4" /> Authorize & Deploy Escrow
+                <ShieldCheck className="w-4 h-4" /> Authorize & Deploy to Devnet
               </Button>
             </>
           )}

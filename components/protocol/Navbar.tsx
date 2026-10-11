@@ -10,7 +10,7 @@ import { useWallet } from '../web3/WalletContext';
 
 export function Navbar() {
   const pathname = usePathname();
-  const { usdcBalance, requestDevnetUsdcFaucet } = useWallet();
+  const { usdcBalance } = useWallet();
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-[#26262a] bg-[#000000] backdrop-blur-md font-mono">

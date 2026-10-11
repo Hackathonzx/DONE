@@ -5,39 +5,33 @@ import Link from 'next/link';
 import { useAgreements } from '@/hooks/useAgreement';
 import { useWallet } from '@/components/web3/WalletContext';
 import { useTransactionExecution } from '@/hooks/useTransactionExecution';
-import { AgreementAccount, AgreementState, MilestoneAccount, MilestoneState } from '@/types/protocol';
+import { AgreementState, MilestoneState, AgreementAccount, MilestoneAccount } from '@/types/protocol';
 import { formatUsdc, truncateAddress } from '@/lib/solana';
 import { AgreementStateBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
-import { TxStateModal } from '@/components/web3/TxStateModal';
-import { QuickActionModal, QuickActionType } from '@/components/protocol/QuickActionModal';
 import { CreateAgreementDrawer } from '@/components/protocol/CreateAgreementDrawer';
+import { QuickActionModal, QuickActionType } from '@/components/protocol/QuickActionModal';
+import { TxStateModal } from '@/components/web3/TxStateModal';
 import { DoneLogo } from '@/components/protocol/DoneLogo';
 import {
-  PlusCircle,
-  ExternalLink,
   ShieldCheck,
-  UploadCloud,
   Coins,
+  UploadCloud,
+  FileCode,
   ArrowRight,
-  Droplets,
-  Layers,
-  Sparkles,
+  PlusCircle,
+  FileCheck2,
+  Lock,
 } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
-import { AGREEMENTS_QUERY_KEY } from '@/hooks/useAgreement';
 
-export default function OverviewPage() {
+export default function ProtocolOverviewPage() {
   const { data: agreements = [], isLoading } = useAgreements();
-  const { requestDevnetUsdcFaucet } = useWallet();
+  const { connected, publicKeyString } = useWallet();
   const { txState, execute, reset: resetTx, isOpen: isTxOpen } = useTransactionExecution();
-  const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'ready' | 'completed'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'pending' | 'completed'>('all');
   const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
 
-  // Quick Action Drawer
   const [drawerState, setDrawerState] = useState<{
     isOpen: boolean;
     type: QuickActionType;
@@ -66,46 +60,44 @@ export default function OverviewPage() {
     setDrawerState((prev) => ({ ...prev, isOpen: false }));
   };
 
-  // Metrics
-  const activeAgreements = agreements.filter(
-    (a) => a.state !== AgreementState.COMPLETED && a.state !== AgreementState.CANCELLED
-  );
-
-  const totalLocked = agreements.reduce((acc, a) => {
+  // Metrics across real on-chain agreements
+  const totalValueLockedUsdc = agreements.reduce((sum, a) => {
     const released = a.milestones
       .filter((m) => m.state === MilestoneState.RELEASED)
-      .reduce((sum, m) => sum + m.amountUsdc, 0);
-    return acc + (a.state !== AgreementState.DRAFT ? Math.max(0, a.totalAmountUsdc - released) : 0);
+      .reduce((s, m) => s + m.amountUsdc, 0);
+    return sum + (a.state !== AgreementState.DRAFT && a.state !== AgreementState.CANCELLED ? a.totalAmountUsdc - released : 0);
   }, 0);
 
-  const totalSettled = agreements.reduce((acc, a) => {
+  const totalSettledUsdc = agreements.reduce((sum, a) => {
     return (
-      acc +
+      sum +
       a.milestones
         .filter((m) => m.state === MilestoneState.RELEASED)
-        .reduce((sum, m) => sum + m.amountUsdc, 0)
+        .reduce((s, m) => s + m.amountUsdc, 0)
     );
   }, 0);
 
-  const filteredAgreements = agreements.filter((a) => {
-    if (activeTab === 'active') return a.state === AgreementState.ACTIVE || a.state === AgreementState.FUNDED;
-    if (activeTab === 'ready') return a.milestones.some((m) => m.state === MilestoneState.VERIFIED);
-    if (activeTab === 'completed') return a.state === AgreementState.COMPLETED;
+  const allMilestones = agreements.flatMap((a) => a.milestones);
+  const totalMilestonesCount = allMilestones.length;
+
+  const filteredAgreements = agreements.filter((agreement) => {
+    if (activeTab === 'all') return true;
+    if (activeTab === 'active') return agreement.state === AgreementState.ACTIVE || agreement.state === AgreementState.FUNDED;
+    if (activeTab === 'pending') return agreement.state === AgreementState.DRAFT;
+    if (activeTab === 'completed') return agreement.state === AgreementState.COMPLETED;
     return true;
   });
 
   return (
-    <div className="space-y-6 font-mono text-neutral-100">
-      {/* Create Agreement Drawer */}
+    <div className="space-y-8 font-mono text-neutral-100 max-w-6xl mx-auto">
       <CreateAgreementDrawer
         isOpen={isCreateDrawerOpen}
         onClose={() => setIsCreateDrawerOpen(false)}
-        onSuccess={async () => {
-          await queryClient.invalidateQueries({ queryKey: AGREEMENTS_QUERY_KEY });
-        }}
+        onSuccess={() => {}}
       />
 
-      {/* Action Drawer */}
+      <TxStateModal state={txState} isOpen={isTxOpen} onClose={resetTx} />
+
       {drawerState.agreement && (
         <QuickActionModal
           isOpen={drawerState.isOpen}
@@ -117,86 +109,137 @@ export default function OverviewPage() {
         />
       )}
 
-      {/* Transaction Status Modal */}
-      <TxStateModal
-        isOpen={isTxOpen}
-        state={txState}
-        onClose={() => {
-          resetTx();
-          queryClient.invalidateQueries({ queryKey: AGREEMENTS_QUERY_KEY });
-        }}
-      />
-
-      {/* Top Hero Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#26262a] pb-5">
-        <div className="flex items-center gap-3">
-          <DoneLogo className="w-10 h-10" />
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-              DONE Escrow Protocol
+      {/* Hero Section */}
+      <div className="relative overflow-hidden rounded-3xl bg-[#000000] border border-[#26262a] p-6 sm:p-8">
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-3 max-w-2xl">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-500/10 border border-violet-500/30 text-violet-300 text-xs font-semibold">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Program ID: 82MC...ZXYM (Solana Devnet)</span>
+            </div>
+            <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
+              Programmable Settlement for Verifiable Work
             </h1>
-            <p className="text-xs text-neutral-400">
-              Deterministic milestone settlements on Solana Devnet
+            <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed">
+              Non-custodial USDC-funded milestones on Solana. Verified Definition of Done commitments,
+              designated on-chain attestations, and deterministic escrow payouts.
             </p>
+            <div className="flex flex-wrap items-center gap-3 pt-2">
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => setIsCreateDrawerOpen(true)}
+                className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 font-bold"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>Create Escrow Agreement</span>
+              </Button>
+              <Link
+                href="/agreements"
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#000000] hover:bg-neutral-900 border border-[#26262a] text-neutral-300 text-xs font-semibold transition-colors"
+              >
+                <FileCode className="w-4 h-4 text-violet-400" />
+                <span>Browse Agreements</span>
+              </Link>
+            </div>
           </div>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => requestDevnetUsdcFaucet(5_000_000_000)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#000000] hover:bg-neutral-900 border border-[#26262a] text-xs font-semibold text-neutral-300 transition-colors"
-          >
-            <Droplets className="w-3.5 h-3.5 text-violet-400" />
-            +5K USDC
-          </button>
-          <Button
-            variant="primary"
-            onClick={() => setIsCreateDrawerOpen(true)}
-            className="flex items-center gap-2"
-          >
-            <PlusCircle className="w-4 h-4" />
-            Create Agreement
-          </Button>
+          <div className="hidden lg:flex items-center justify-center p-6 bg-[#000000] border border-[#26262a] rounded-2xl">
+            <DoneLogo className="w-24 h-24" />
+          </div>
         </div>
       </div>
 
-      {/* Metric Cards */}
+      {/* Metrics Row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl space-y-1">
-          <span className="text-[10px] text-neutral-400 uppercase tracking-wider block font-semibold">
-            Active Escrows
-          </span>
+          <div className="flex items-center justify-between text-neutral-400 text-xs">
+            <span className="text-[10px] uppercase font-semibold">LOCKED IN ESCROW</span>
+            <Lock className="w-3.5 h-3.5 text-violet-400" />
+          </div>
           <div className="text-2xl font-black text-white">
-            {activeAgreements.length}
+            ${formatUsdc(totalValueLockedUsdc)} <span className="text-xs text-neutral-400 font-normal">USDC</span>
           </div>
+          <div className="text-[10px] text-neutral-500">Program PDA Vaults</div>
         </div>
 
         <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl space-y-1">
-          <span className="text-[10px] text-neutral-400 uppercase tracking-wider block font-semibold">
-            Total Value Locked
-          </span>
-          <div className="text-2xl font-black text-violet-400">
-            ${formatUsdc(totalLocked)} <span className="text-xs text-neutral-500 font-normal">USDC</span>
+          <div className="flex items-center justify-between text-neutral-400 text-xs">
+            <span className="text-[10px] uppercase font-semibold">TOTAL SETTLED</span>
+            <Coins className="w-3.5 h-3.5 text-emerald-400" />
           </div>
-        </div>
-
-        <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl space-y-1">
-          <span className="text-[10px] text-neutral-400 uppercase tracking-wider block font-semibold">
-            Settled Volume
-          </span>
           <div className="text-2xl font-black text-emerald-400">
-            ${formatUsdc(totalSettled)} <span className="text-xs text-neutral-500 font-normal">USDC</span>
+            ${formatUsdc(totalSettledUsdc)} <span className="text-xs text-neutral-400 font-normal">USDC</span>
+          </div>
+          <div className="text-[10px] text-neutral-500">Released to Workers</div>
+        </div>
+
+        <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl space-y-1">
+          <div className="flex items-center justify-between text-neutral-400 text-xs">
+            <span className="text-[10px] uppercase font-semibold">TOTAL MILESTONES</span>
+            <ShieldCheck className="w-3.5 h-3.5 text-violet-400" />
+          </div>
+          <div className="text-2xl font-black text-violet-300">
+            {totalMilestonesCount}
+          </div>
+          <div className="text-[10px] text-neutral-500">Across Deployed Accounts</div>
+        </div>
+      </div>
+
+      {/* 7-Step Protocol Lifecycle Guide */}
+      <div className="p-5 bg-[#000000] border border-[#26262a] rounded-2xl space-y-3">
+        <div className="flex items-center justify-between border-b border-[#26262a] pb-2 text-xs">
+          <span className="font-bold text-white uppercase tracking-wider">
+            Protocol Workflow (Live Devnet Lifecycle)
+          </span>
+          <span className="text-[10px] text-violet-400">Strict On-Chain Enforced</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-[11px]">
+          <div className="p-2.5 bg-neutral-950 border border-[#26262a] rounded-xl space-y-1">
+            <div className="text-violet-400 font-bold">1. Create Escrow</div>
+            <div className="text-neutral-400 text-[10px]">Sponsor creates agreement & milestones with committed DoD hashes.</div>
+          </div>
+          <div className="p-2.5 bg-neutral-950 border border-[#26262a] rounded-xl space-y-1">
+            <div className="text-violet-400 font-bold">2. Worker Accepts</div>
+            <div className="text-neutral-400 text-[10px]">Worker accepts finalized 100% allocation on-chain before funding.</div>
+          </div>
+          <div className="p-2.5 bg-neutral-950 border border-[#26262a] rounded-xl space-y-1">
+            <div className="text-violet-400 font-bold">3. Sponsor Funds</div>
+            <div className="text-neutral-400 text-[10px]">Sponsor deposits Devnet USDC into the program Escrow Token PDA.</div>
+          </div>
+          <div className="p-2.5 bg-neutral-950 border border-[#26262a] rounded-xl space-y-1">
+            <div className="text-violet-400 font-bold">4. Submit Proof</div>
+            <div className="text-neutral-400 text-[10px]">Worker submits 32-byte evidence hash calculated from verification recipe.</div>
+          </div>
+          <div className="p-2.5 bg-neutral-950 border border-[#26262a] rounded-xl space-y-1">
+            <div className="text-violet-400 font-bold">5. Verifier Attests</div>
+            <div className="text-neutral-400 text-[10px]">Milestone assigned verifier verifies or rejects evidence on-chain.</div>
+          </div>
+          <div className="p-2.5 bg-neutral-950 border border-[#26262a] rounded-xl space-y-1">
+            <div className="text-violet-400 font-bold">6. Release Funds</div>
+            <div className="text-neutral-400 text-[10px]">Verified escrow funds transfer directly to the assigned worker ATA.</div>
+          </div>
+          <div className="p-2.5 bg-neutral-950 border border-[#26262a] rounded-xl space-y-1">
+            <div className="text-violet-400 font-bold">7. Cancellation</div>
+            <div className="text-neutral-400 text-[10px]">Requires co-signatures from sponsor & worker; refunds remaining escrow.</div>
+          </div>
+          <div className="p-2.5 bg-neutral-950 border border-[#26262a] rounded-xl space-y-1">
+            <div className="text-violet-400 font-bold">8. Off-chain Storage</div>
+            <div className="text-neutral-400 text-[10px]">Titles, descriptions & links linked to on-chain hashes & PDAs.</div>
           </div>
         </div>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="flex items-center justify-between gap-4 pt-2">
-        <div className="flex items-center bg-[#000000] border border-[#26262a] p-1 rounded-xl text-xs">
+      {/* Feed Filter Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+        <h2 className="text-base font-bold text-white tracking-wide">
+          On-Chain Agreements ({filteredAgreements.length})
+        </h2>
+        <div className="flex items-center gap-1 bg-[#000000] p-1 rounded-xl border border-[#26262a] text-xs">
           {[
-            { id: 'all', label: `All (${agreements.length})` },
-            { id: 'active', label: 'In Progress' },
-            { id: 'ready', label: 'Ready to Release' },
+            { id: 'all', label: 'All' },
+            { id: 'active', label: 'Funded / Active' },
+            { id: 'pending', label: 'Drafts' },
             { id: 'completed', label: 'Completed' },
           ].map((tab) => (
             <button
@@ -214,8 +257,13 @@ export default function OverviewPage() {
         </div>
       </div>
 
-      {/* Agreement List or Clean Zero State */}
-      {agreements.length === 0 ? (
+      {/* Agreement List */}
+      {isLoading ? (
+        <div className="p-12 text-center bg-[#000000] border border-[#26262a] rounded-3xl space-y-3">
+          <DoneLogo className="w-10 h-10 mx-auto animate-pulse" />
+          <p className="text-xs text-neutral-400">Loading on-chain agreements...</p>
+        </div>
+      ) : agreements.length === 0 ? (
         <div className="p-8 sm:p-12 text-center bg-[#000000] border border-[#26262a] rounded-3xl space-y-4">
           <DoneLogo className="w-16 h-16 mx-auto" />
           <div className="space-y-1 max-w-md mx-auto">
@@ -224,13 +272,12 @@ export default function OverviewPage() {
               Create your first non-custodial milestone escrow agreement on Solana.
             </p>
           </div>
-
           <div className="pt-2">
             <Button
               variant="primary"
               size="lg"
               onClick={() => setIsCreateDrawerOpen(true)}
-              className="inline-flex items-center gap-2"
+              className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-500"
             >
               <PlusCircle className="w-4 h-4" />
               Create Escrow Agreement
@@ -247,11 +294,9 @@ export default function OverviewPage() {
             const nextMilestone =
               agreement.milestones.find((m) => m.state !== MilestoneState.RELEASED) ||
               agreement.milestones[agreement.milestones.length - 1];
-
             const releasedCount = agreement.milestones.filter(
               (m) => m.state === MilestoneState.RELEASED
             ).length;
-
             const progressPct =
               agreement.milestones.length > 0
                 ? Math.round((releasedCount / agreement.milestones.length) * 100)
@@ -278,9 +323,12 @@ export default function OverviewPage() {
                       <span>Worker: {truncateAddress(agreement.worker, 4)}</span>
                       <span>•</span>
                       <span>Vault: {truncateAddress(agreement.vaultPda, 4)}</span>
+                      <span>•</span>
+                      <span className={agreement.workerAccepted ? 'text-emerald-400' : 'text-amber-400'}>
+                        {agreement.workerAccepted ? 'Accepted ✓' : 'Awaiting Worker Acceptance'}
+                      </span>
                     </div>
                   </div>
-
                   <div className="text-left sm:text-right">
                     <div className="text-lg font-black text-violet-400">
                       ${formatUsdc(agreement.totalAmountUsdc)} USDC
@@ -322,29 +370,43 @@ export default function OverviewPage() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {/* Primary contextual action button */}
-                    {agreement.state === AgreementState.DRAFT && (
+                    {agreement.state === AgreementState.DRAFT && !agreement.workerAccepted && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => openDrawer('accept', agreement)}
+                        className="text-xs text-violet-300 border-violet-500/30"
+                      >
+                        <FileCheck2 className="w-3.5 h-3.5 mr-1" />
+                        Worker Accept
+                      </Button>
+                    )}
+
+                    {agreement.state === AgreementState.DRAFT && agreement.workerAccepted && (
                       <Button
                         variant="primary"
                         size="sm"
                         onClick={() => openDrawer('fund', agreement)}
-                        className="text-xs"
+                        className="text-xs bg-emerald-600 hover:bg-emerald-500"
                       >
+                        <Lock className="w-3.5 h-3.5 mr-1" />
                         Fund Escrow
                       </Button>
                     )}
 
-                    {nextMilestone && nextMilestone.state === MilestoneState.PENDING && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => openDrawer('submit_evidence', agreement, nextMilestone)}
-                        className="text-xs"
-                      >
-                        <UploadCloud className="w-3.5 h-3.5 mr-1 text-violet-400" />
-                        Submit Proof
-                      </Button>
-                    )}
+                    {nextMilestone &&
+                      nextMilestone.state === MilestoneState.PENDING &&
+                      (agreement.state === AgreementState.FUNDED || agreement.state === AgreementState.ACTIVE) && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => openDrawer('submit_evidence', agreement, nextMilestone)}
+                          className="text-xs"
+                        >
+                          <UploadCloud className="w-3.5 h-3.5 mr-1 text-violet-400" />
+                          Submit Proof
+                        </Button>
+                      )}
 
                     {nextMilestone && nextMilestone.state === MilestoneState.EVIDENCE_SUBMITTED && (
                       <Button
@@ -366,7 +428,7 @@ export default function OverviewPage() {
                         className="text-xs bg-emerald-600 hover:bg-emerald-500"
                       >
                         <Coins className="w-3.5 h-3.5 mr-1" />
-                        Authorize Release
+                        Release Funds
                       </Button>
                     )}
 

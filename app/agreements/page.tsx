@@ -2,8 +2,8 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useAgreements, AGREEMENTS_QUERY_KEY } from '@/hooks/useAgreement';
-import { useWallet } from '@/components/web3/WalletContext';
+import { useAgreements } from '@/hooks/useAgreement';
+import { useTransactionExecution } from '@/hooks/useTransactionExecution';
 import { AgreementState, MilestoneState, AgreementAccount, MilestoneAccount } from '@/types/protocol';
 import { formatUsdc, truncateAddress } from '@/lib/solana';
 import { AgreementStateBadge } from '@/components/ui/Badge';
@@ -11,26 +11,23 @@ import { Button } from '@/components/ui/Button';
 import { DoneLogo } from '@/components/protocol/DoneLogo';
 import { CreateAgreementDrawer } from '@/components/protocol/CreateAgreementDrawer';
 import { QuickActionModal, QuickActionType } from '@/components/protocol/QuickActionModal';
-import { useTransactionExecution } from '@/hooks/useTransactionExecution';
 import { TxStateModal } from '@/components/web3/TxStateModal';
-import { useQueryClient } from '@tanstack/react-query';
 import {
-  FileCode,
   PlusCircle,
   Search,
   ArrowRight,
-  ShieldCheck,
   UploadCloud,
+  ShieldCheck,
   Coins,
+  Lock,
+  FileCheck2,
 } from 'lucide-react';
 
-export default function AgreementsExplorerPage() {
+export default function AgreementsDirectoryPage() {
   const { data: agreements = [], isLoading } = useAgreements();
-  const { publicKeyString } = useWallet();
   const { txState, execute, reset: resetTx, isOpen: isTxOpen } = useTransactionExecution();
-  const queryClient = useQueryClient();
 
-  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'completed'>('all');
+  const [activeFilter, setActiveFilter] = useState<'ALL' | AgreementState>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
 
@@ -58,42 +55,43 @@ export default function AgreementsExplorerPage() {
     });
   };
 
-  const filterOptions = [
-    { id: 'all', label: `All (${agreements.length})` },
-    { id: 'active', label: 'Active Escrows' },
-    { id: 'completed', label: 'Completed' },
-  ];
+  const closeDrawer = () => {
+    setDrawerState((prev) => ({ ...prev, isOpen: false }));
+  };
 
   const filteredAgreements = agreements.filter((a) => {
-    if (activeFilter === 'active' && (a.state === AgreementState.COMPLETED || a.state === AgreementState.CANCELLED)) return false;
-    if (activeFilter === 'completed' && a.state !== AgreementState.COMPLETED) return false;
-
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      return (
-        a.title.toLowerCase().includes(q) ||
-        a.description.toLowerCase().includes(q) ||
-        a.publicKey.toLowerCase().includes(q) ||
-        a.worker.toLowerCase().includes(q)
-      );
-    }
-    return true;
+    const matchesFilter = activeFilter === 'ALL' || a.state === activeFilter;
+    const matchesSearch =
+      searchQuery === '' ||
+      a.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      a.sponsor.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      a.worker.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      a.publicKey.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesFilter && matchesSearch;
   });
 
+  const filterOptions = [
+    { id: 'ALL', label: 'All Agreements' },
+    { id: AgreementState.DRAFT, label: 'Draft' },
+    { id: AgreementState.FUNDED, label: 'Funded' },
+    { id: AgreementState.ACTIVE, label: 'Active' },
+    { id: AgreementState.COMPLETED, label: 'Completed' },
+  ];
+
   return (
-    <div className="space-y-6 font-mono text-neutral-100">
+    <div className="space-y-6 font-mono text-neutral-100 max-w-6xl mx-auto">
       <CreateAgreementDrawer
         isOpen={isCreateDrawerOpen}
         onClose={() => setIsCreateDrawerOpen(false)}
-        onSuccess={async () => {
-          await queryClient.invalidateQueries({ queryKey: AGREEMENTS_QUERY_KEY });
-        }}
+        onSuccess={() => {}}
       />
+
+      <TxStateModal state={txState} isOpen={isTxOpen} onClose={resetTx} />
 
       {drawerState.agreement && (
         <QuickActionModal
           isOpen={drawerState.isOpen}
-          onClose={() => setDrawerState((prev) => ({ ...prev, isOpen: false }))}
+          onClose={closeDrawer}
           actionType={drawerState.type}
           agreement={drawerState.agreement}
           milestone={drawerState.milestone}
@@ -101,42 +99,29 @@ export default function AgreementsExplorerPage() {
         />
       )}
 
-      <TxStateModal
-        isOpen={isTxOpen}
-        state={txState}
-        onClose={() => {
-          resetTx();
-          queryClient.invalidateQueries({ queryKey: AGREEMENTS_QUERY_KEY });
-        }}
-      />
-
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#26262a] pb-4">
-        <div className="flex items-center gap-3">
-          <DoneLogo className="w-8 h-8" />
-          <div>
-            <div className="flex items-center gap-2 text-xs text-violet-400 mb-0.5">
-              <FileCode className="w-3.5 h-3.5" />
-              <span className="font-bold tracking-wider">ESCROW REGISTRY</span>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-bold text-white">Agreements</h1>
-          </div>
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-white tracking-wide">
+            Devnet Escrows
+          </h1>
+          <p className="text-xs text-neutral-400 mt-1">
+            Live Solana Devnet agreements with real account states and verified milestone payouts.
+          </p>
         </div>
-
         <Button
           variant="primary"
-          size="md"
           onClick={() => setIsCreateDrawerOpen(true)}
-          className="flex items-center gap-2 self-start sm:self-auto"
+          className="inline-flex items-center gap-2 self-start sm:self-auto bg-violet-600 hover:bg-violet-500"
         >
           <PlusCircle className="w-4 h-4" />
-          Create Agreement
+          <span>New Agreement</span>
         </Button>
       </div>
 
       {/* Controls */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="flex items-center bg-[#000000] border border-[#26262a] p-1 rounded-xl">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#000000] p-2 rounded-2xl border border-[#26262a]">
+        <div className="flex flex-wrap gap-1">
           {filterOptions.map((opt) => (
             <button
               key={opt.id}
@@ -158,20 +143,25 @@ export default function AgreementsExplorerPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filter by title or address..."
+            placeholder="Search address or title..."
             className="w-full sm:w-64 bg-[#000000] border border-[#26262a] rounded-xl pl-9 pr-3.5 py-2 text-xs text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-violet-500"
           />
         </div>
       </div>
 
       {/* List */}
-      {agreements.length === 0 ? (
+      {isLoading ? (
+        <div className="p-12 text-center bg-[#000000] border border-[#26262a] rounded-3xl space-y-3">
+          <DoneLogo className="w-10 h-10 mx-auto animate-pulse" />
+          <p className="text-xs text-neutral-400">Loading on-chain program accounts...</p>
+        </div>
+      ) : agreements.length === 0 ? (
         <div className="p-10 text-center bg-[#000000] border border-[#26262a] rounded-3xl space-y-4">
           <DoneLogo className="w-14 h-14 mx-auto" />
           <div className="space-y-1">
             <h3 className="text-base font-bold text-white">No Escrow Agreements</h3>
             <p className="text-xs text-neutral-400">
-              Create a milestone agreement with cryptographic proof & deterministic payouts.
+              Create an escrow agreement on Solana Devnet to get started.
             </p>
           </div>
           <Button
@@ -184,7 +174,7 @@ export default function AgreementsExplorerPage() {
         </div>
       ) : filteredAgreements.length === 0 ? (
         <div className="p-8 text-center bg-[#000000] border border-[#26262a] rounded-2xl text-xs text-neutral-400">
-          No agreements matching this search.
+          No agreements matching this filter.
         </div>
       ) : (
         <div className="space-y-3">
@@ -222,9 +212,12 @@ export default function AgreementsExplorerPage() {
                       <span>Worker: {truncateAddress(agreement.worker, 4)}</span>
                       <span>•</span>
                       <span>{agreement.milestones.length} Milestones</span>
+                      <span>•</span>
+                      <span className={agreement.workerAccepted ? 'text-emerald-400' : 'text-amber-400'}>
+                        {agreement.workerAccepted ? 'Accepted ✓' : 'Awaiting Worker'}
+                      </span>
                     </div>
                   </div>
-
                   <div className="text-left sm:text-right">
                     <div className="text-lg font-black text-violet-400">
                       ${formatUsdc(agreement.totalAmountUsdc)} USDC
@@ -264,28 +257,43 @@ export default function AgreementsExplorerPage() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {agreement.state === AgreementState.DRAFT && (
+                    {agreement.state === AgreementState.DRAFT && !agreement.workerAccepted && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => openDrawer('accept', agreement)}
+                        className="text-xs text-violet-300 border-violet-500/30"
+                      >
+                        <FileCheck2 className="w-3.5 h-3.5 mr-1" />
+                        Worker Accept
+                      </Button>
+                    )}
+
+                    {agreement.state === AgreementState.DRAFT && agreement.workerAccepted && (
                       <Button
                         variant="primary"
                         size="sm"
                         onClick={() => openDrawer('fund', agreement)}
-                        className="text-xs"
+                        className="text-xs bg-emerald-600 hover:bg-emerald-500"
                       >
+                        <Lock className="w-3.5 h-3.5 mr-1" />
                         Fund Escrow
                       </Button>
                     )}
 
-                    {nextMilestone && nextMilestone.state === MilestoneState.PENDING && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => openDrawer('submit_evidence', agreement, nextMilestone)}
-                        className="text-xs"
-                      >
-                        <UploadCloud className="w-3.5 h-3.5 mr-1 text-violet-400" />
-                        Submit Proof
-                      </Button>
-                    )}
+                    {nextMilestone &&
+                      nextMilestone.state === MilestoneState.PENDING &&
+                      (agreement.state === AgreementState.FUNDED || agreement.state === AgreementState.ACTIVE) && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => openDrawer('submit_evidence', agreement, nextMilestone)}
+                          className="text-xs"
+                        >
+                          <UploadCloud className="w-3.5 h-3.5 mr-1 text-violet-400" />
+                          Submit Proof
+                        </Button>
+                      )}
 
                     {nextMilestone && nextMilestone.state === MilestoneState.EVIDENCE_SUBMITTED && (
                       <Button
@@ -307,7 +315,7 @@ export default function AgreementsExplorerPage() {
                         className="text-xs bg-emerald-600 hover:bg-emerald-500"
                       >
                         <Coins className="w-3.5 h-3.5 mr-1" />
-                        Authorize Release
+                        Release Funds
                       </Button>
                     )}
 

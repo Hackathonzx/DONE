@@ -2,28 +2,26 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useAgreements, AGREEMENTS_QUERY_KEY } from '@/hooks/useAgreement';
+import { useAgreements } from '@/hooks/useAgreement';
 import { useWallet } from '@/components/web3/WalletContext';
 import { useTransactionExecution } from '@/hooks/useTransactionExecution';
-import { AgreementAccount, AgreementState, MilestoneAccount, MilestoneState } from '@/types/protocol';
+import { AgreementState, MilestoneState, AgreementAccount, MilestoneAccount } from '@/types/protocol';
 import { formatUsdc, truncateAddress } from '@/lib/solana';
 import { AgreementStateBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
-import { TxStateModal } from '@/components/web3/TxStateModal';
-import { QuickActionModal, QuickActionType } from '@/components/protocol/QuickActionModal';
 import { CreateAgreementDrawer } from '@/components/protocol/CreateAgreementDrawer';
+import { QuickActionModal, QuickActionType } from '@/components/protocol/QuickActionModal';
+import { TxStateModal } from '@/components/web3/TxStateModal';
 import { DoneLogo } from '@/components/protocol/DoneLogo';
+import { useQueryClient } from '@tanstack/react-query';
+import { AGREEMENTS_QUERY_KEY } from '@/hooks/useAgreement';
 import {
   ShieldCheck,
   PlusCircle,
   AlertCircle,
-  Lock,
-  TrendingUp,
   ArrowRight,
-  Coins,
+  Lock,
 } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
 
 export default function SponsorDashboardPage() {
   const { publicKeyString } = useWallet();
@@ -33,11 +31,10 @@ export default function SponsorDashboardPage() {
 
   const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
 
-  // Filter agreements where current wallet is the sponsor, or all if none matching
+  // Filter agreements where current wallet is sponsor, or show all if none
   const sponsorAgreements = publicKeyString
     ? allAgreements.filter((a) => a.sponsor === publicKeyString)
     : allAgreements;
-
   const agreements = sponsorAgreements.length > 0 ? sponsorAgreements : allAgreements;
 
   const [drawerState, setDrawerState] = useState<{
@@ -92,7 +89,7 @@ export default function SponsorDashboardPage() {
   );
 
   return (
-    <div className="space-y-6 font-mono text-neutral-100">
+    <div className="space-y-6 font-mono text-neutral-100 max-w-6xl mx-auto">
       <CreateAgreementDrawer
         isOpen={isCreateDrawerOpen}
         onClose={() => setIsCreateDrawerOpen(false)}
@@ -126,12 +123,11 @@ export default function SponsorDashboardPage() {
             <h1 className="text-xl sm:text-2xl font-bold text-white">Sponsor Hub</h1>
           </div>
         </div>
-
         <Button
           variant="primary"
           size="sm"
           onClick={() => setIsCreateDrawerOpen(true)}
-          className="flex items-center gap-1.5 self-start sm:self-auto"
+          className="flex items-center gap-1.5 self-start sm:self-auto bg-violet-600 hover:bg-violet-500"
         >
           <PlusCircle className="w-4 h-4" />
           New Escrow
@@ -148,7 +144,6 @@ export default function SponsorDashboardPage() {
             ${formatUsdc(totalEscrowLocked)} <span className="text-xs text-neutral-400 font-normal">USDC</span>
           </div>
         </div>
-
         <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl space-y-1">
           <span className="text-[10px] text-neutral-400 uppercase tracking-wider block font-semibold">
             Total Settled
@@ -157,7 +152,6 @@ export default function SponsorDashboardPage() {
             ${formatUsdc(totalSettledPaid)} <span className="text-xs text-neutral-400 font-normal">USDC</span>
           </div>
         </div>
-
         <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl space-y-1">
           <span className="text-[10px] text-neutral-400 uppercase tracking-wider block font-semibold">
             Pending Audits
@@ -177,7 +171,6 @@ export default function SponsorDashboardPage() {
               Deliverables Ready for Verification ({pendingVerifications.length})
             </h3>
           </div>
-
           <div className="space-y-2">
             {pendingVerifications.map(({ agreement, milestone }) => (
               <div
@@ -190,7 +183,6 @@ export default function SponsorDashboardPage() {
                     {agreement.title} • Worker: {truncateAddress(agreement.worker, 4)}
                   </div>
                 </div>
-
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-violet-400 text-xs">
                     ${formatUsdc(milestone.amountUsdc)} USDC
@@ -216,8 +208,11 @@ export default function SponsorDashboardPage() {
         <h3 className="text-xs uppercase font-bold text-neutral-400 tracking-wider">
           Sponsored Escrows ({agreements.length})
         </h3>
-
-        {agreements.length === 0 ? (
+        {isLoading ? (
+          <div className="p-8 text-center bg-[#000000] border border-[#26262a] rounded-2xl text-xs text-neutral-400">
+            Loading sponsored agreements from Devnet...
+          </div>
+        ) : agreements.length === 0 ? (
           <div className="p-8 text-center bg-[#000000] border border-[#26262a] rounded-2xl space-y-3">
             <DoneLogo className="w-12 h-12 mx-auto" />
             <p className="text-xs text-neutral-400">No sponsored agreements yet.</p>
@@ -245,15 +240,32 @@ export default function SponsorDashboardPage() {
                   ${formatUsdc(agreement.totalAmountUsdc)} USDC
                 </div>
               </div>
-
               <div className="flex items-center justify-between pt-2 border-t border-[#26262a]/60 text-neutral-400">
-                <span>Beneficiary: {truncateAddress(agreement.worker, 4)}</span>
-                <Link
-                  href={`/agreements/${agreement.publicKey}`}
-                  className="text-violet-400 hover:text-violet-300 flex items-center gap-1 font-semibold"
-                >
-                  Manage <ArrowRight className="w-3.5 h-3.5" />
-                </Link>
+                <span className="flex items-center gap-2">
+                  <span>Worker: {truncateAddress(agreement.worker, 4)}</span>
+                  <span>•</span>
+                  <span className={agreement.workerAccepted ? 'text-emerald-400' : 'text-amber-400'}>
+                    {agreement.workerAccepted ? 'Accepted ✓' : 'Awaiting Acceptance'}
+                  </span>
+                </span>
+                <div className="flex items-center gap-2">
+                  {agreement.state === AgreementState.DRAFT && agreement.workerAccepted && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => openDrawer('fund', agreement)}
+                      className="text-xs bg-emerald-600 hover:bg-emerald-500"
+                    >
+                      <Lock className="w-3.5 h-3.5 mr-1" /> Fund Escrow
+                    </Button>
+                  )}
+                  <Link
+                    href={`/agreements/${agreement.publicKey}`}
+                    className="text-violet-400 hover:text-violet-300 flex items-center gap-1 font-semibold"
+                  >
+                    Manage <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
               </div>
             </div>
           ))

@@ -8,27 +8,26 @@ import { useWallet } from '@/components/web3/WalletContext';
 import { useTransactionExecution } from '@/hooks/useTransactionExecution';
 import { MilestoneState } from '@/types/protocol';
 import { formatUsdc, truncateAddress } from '@/lib/solana';
-import { MilestoneStateBadge, VerificationTypeBadge } from '@/components/ui/Badge';
+import { MilestoneStateBadge } from '@/components/ui/Badge';
 import { Card, CardHeader, CardContent } from '@/components/ui/Card';
 import { TxStateModal } from '@/components/web3/TxStateModal';
-import { PipelineProgress } from '@/components/protocol/PipelineProgress';
 import { EvidenceForm } from '@/components/protocol/EvidenceForm';
 import { VerificationCard } from '@/components/protocol/VerificationCard';
+import { PipelineProgress } from '@/components/protocol/PipelineProgress';
 import { DoneLogo } from '@/components/protocol/DoneLogo';
 import {
   ChevronLeft,
-  ExternalLink,
   ShieldCheck,
-  Hash,
   CheckCircle2,
+  ExternalLink,
+  Hash,
   Link as LinkIcon,
 } from 'lucide-react';
 
 export default function MilestoneDetailPage() {
   const params = useParams();
   const agreementId = params?.id as string;
-  const milestoneIndexStr = params?.mId as string;
-  const milestoneIndex = parseInt(milestoneIndexStr, 10);
+  const milestoneIndex = parseInt(params?.mId as string, 10);
 
   const { data: agreement, isLoading } = useAgreement(agreementId);
   const { publicKeyString } = useWallet();
@@ -57,9 +56,6 @@ export default function MilestoneDetailPage() {
     );
   }
 
-  const isVerifierOrSponsor =
-    publicKeyString === agreement.sponsor || publicKeyString === milestone.verifier;
-
   return (
     <div className="max-w-4xl mx-auto space-y-6 font-mono text-neutral-100">
       <TxStateModal state={txState} isOpen={isTxOpen} onClose={resetTx} />
@@ -87,7 +83,6 @@ export default function MilestoneDetailPage() {
                 </span>
                 <h1 className="text-lg sm:text-xl font-bold text-white">{milestone.title}</h1>
                 <MilestoneStateBadge state={milestone.state} />
-                <VerificationTypeBadge type={milestone.verificationType} />
               </div>
               <p className="text-xs sm:text-sm text-neutral-400 max-w-2xl">{milestone.description}</p>
             </div>
@@ -226,7 +221,7 @@ export default function MilestoneDetailPage() {
         <VerificationCard
           agreementKey={agreement.publicKey}
           milestone={milestone}
-          isVerifierOrSponsor={isVerifierOrSponsor}
+          workerAddress={agreement.worker}
           onExecute={execute}
         />
       )}

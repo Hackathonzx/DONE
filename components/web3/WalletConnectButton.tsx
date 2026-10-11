@@ -1,43 +1,49 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWallet } from './WalletContext';
 import { truncateAddress, formatUsdc, getExplorerUrl } from '@/lib/solana';
-import { Button } from '../ui/Button';
-import { ChevronDown, Copy, Check, ExternalLink, Droplets, Wallet, ShieldCheck, RefreshCw, Smartphone } from 'lucide-react';
+import { isMobileBrowser, getPhantomDeepLink, getSolflareDeepLink } from '@/lib/mobileWallet';
+import {
+  Wallet,
+  ChevronDown,
+  ExternalLink,
+  Copy,
+  Check,
+  ShieldCheck,
+  RefreshCw,
+  Smartphone,
+  CheckCircle2,
+} from 'lucide-react';
 import { DoneLogo } from '../protocol/DoneLogo';
-import { isMobileBrowser, getPhantomDeepLink, getSolflareDeepLink, launchMobileWallet } from '@/lib/mobileWallet';
 
 export function WalletConnectButton() {
   const {
     connected,
-    isConnecting,
     publicKeyString,
     walletName,
-    usdcBalance,
     solBalance,
-    connectError,
+    usdcBalance,
     connect,
     disconnect,
-    clearError,
-    requestDevnetUsdcFaucet,
-    requestDevnetSolAirdrop,
     refreshBalances,
+    requestDevnetSolAirdrop,
+    connectError,
+    clearError,
+    isConnecting,
   } = useWallet();
 
   const [isOpen, setIsOpen] = useState(false);
-  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
-  const [importAddrInput, setImportAddrInput] = useState('');
+  const [showConnectModal, setShowConnectModal] = useState(false);
   const [showImportField, setShowImportField] = useState(false);
+  const [importAddrInput, setImportAddrInput] = useState('');
   const [copied, setCopied] = useState(false);
   const [isAirdropping, setIsAirdropping] = useState(false);
-  const [faucetSuccess, setFaucetSuccess] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
-  const hasPhantom = typeof window !== 'undefined' && Boolean((window as unknown as { solana?: { isPhantom?: boolean } }).solana);
-  const hasSolflare = typeof window !== 'undefined' && Boolean((window as unknown as { solflare?: { isSolflare?: boolean } }).solflare);
-  const isMobile = typeof window !== 'undefined' && isMobileBrowser();
-  const phantomLinks = typeof window !== 'undefined' ? getPhantomDeepLink() : { universalLink: '', nativeScheme: '' };
-  const solflareLinks = typeof window !== 'undefined' ? getSolflareDeepLink() : { universalLink: '', nativeScheme: '' };
+  useEffect(() => {
+    setIsMobile(isMobileBrowser());
+  }, []);
 
   const handleCopy = () => {
     if (!publicKeyString) return;
@@ -46,142 +52,102 @@ export function WalletConnectButton() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleAirdropSol = async () => {
-    setIsAirdropping(true);
-    await requestDevnetSolAirdrop();
-    setIsAirdropping(false);
-  };
-
-  const handleFaucetUsdc = () => {
-    requestDevnetUsdcFaucet(5_000_000_000);
-    setFaucetSuccess(true);
-    setTimeout(() => setFaucetSuccess(false), 2000);
-  };
-
   const handleConnectOption = async (option: 'phantom' | 'solflare' | 'custom') => {
-    clearError();
     if (option === 'custom') {
-      if (!importAddrInput.trim()) return;
-      const success = await connect('custom', importAddrInput.trim());
-      if (success) {
-        setIsConnectModalOpen(false);
+      const ok = await connect('custom', importAddrInput);
+      if (ok) {
+        setShowConnectModal(false);
         setShowImportField(false);
+        setImportAddrInput('');
       }
     } else {
-      const success = await connect(option);
-      if (success) {
-        setIsConnectModalOpen(false);
-        setShowImportField(false);
+      const ok = await connect(option);
+      if (ok) {
+        setShowConnectModal(false);
       }
     }
   };
 
-  if (!connected || !publicKeyString) {
+  const handleAirdropSol = async () => {
+    setIsAirdropping(true);
+    try {
+      await requestDevnetSolAirdrop();
+    } finally {
+      setIsAirdropping(false);
+    }
+  };
+
+  const hasPhantom = typeof window !== 'undefined' && Boolean((window as any)?.solana?.isPhantom);
+  const hasSolflare = typeof window !== 'undefined' && Boolean((window as any)?.solflare);
+
+  const phantomLinks = getPhantomDeepLink();
+  const solflareLinks = getSolflareDeepLink();
+
+  if (!connected) {
     return (
       <>
-        <Button
-          variant="primary"
-          size="sm"
-          isLoading={isConnecting}
+        <button
           onClick={() => {
             clearError();
-            setIsConnectModalOpen(true);
+            setShowConnectModal(true);
           }}
-          className="flex items-center gap-2"
+          disabled={isConnecting}
+          className="flex items-center gap-2 px-3.5 py-2 bg-violet-600 hover:bg-violet-500 active:scale-[0.98] text-white rounded-xl text-xs font-semibold transition-all shadow-md shadow-violet-600/20 border border-violet-500/40"
         >
           <Wallet className="w-3.5 h-3.5" />
-          <span>Connect Wallet</span>
-        </Button>
+          <span>{isConnecting ? 'Connecting...' : 'Connect Wallet'}</span>
+        </button>
 
-        {/* Connect Wallet Selection Modal */}
-        {isConnectModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
-            <div className="w-full max-w-md bg-[#000000] border border-[#26262a] rounded-2xl p-5 shadow-2xl font-mono text-xs space-y-4">
+        {showConnectModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 font-mono animate-in fade-in duration-150">
+            <div className="w-full max-w-sm bg-[#000000] border border-[#26262a] rounded-2xl shadow-2xl p-5 space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-[#26262a]">
                 <div className="flex items-center gap-2.5">
                   <DoneLogo className="w-6 h-6" />
                   <div>
-                    <h3 className="font-bold text-sm text-white">Connect Solana Wallet</h3>
-                    <p className="text-[11px] text-neutral-400">
-                      {isMobile ? 'Mobile App Universal Link or Web3' : 'Select a real Solana provider'}
-                    </p>
+                    <h3 className="text-xs font-bold text-white tracking-wider">SOLANA DEVNET WALLET</h3>
+                    <span className="text-[10px] text-violet-400">Sign live on-chain transactions</span>
                   </div>
                 </div>
                 <button
-                  onClick={() => setIsConnectModalOpen(false)}
-                  className="p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-900 transition-colors"
+                  onClick={() => setShowConnectModal(false)}
+                  className="text-neutral-400 hover:text-white text-xs px-2 py-1 rounded"
                 >
                   ✕
                 </button>
               </div>
 
-              {isMobile && (
-                <div className="p-2.5 rounded-xl bg-violet-600/10 border border-violet-500/30 text-violet-300 text-[11px] flex items-center gap-2">
-                  <Smartphone className="w-4 h-4 flex-shrink-0 text-violet-400" />
-                  <span>Mobile detected: Tapping Phantom or Solflare will launch your native mobile wallet app.</span>
-                </div>
-              )}
-
               {connectError && (
-                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex flex-col gap-1.5">
-                  <span className="font-bold">Notice:</span>
-                  <span>{connectError}</span>
-                  {isMobile && (
-                    <div className="flex gap-2 pt-1">
-                      <a
-                        href={phantomLinks.universalLink}
-                        target="_top"
-                        rel="noopener noreferrer"
-                        className="px-2.5 py-1 rounded bg-violet-600 text-white font-bold text-[10px] hover:bg-violet-500 transition-colors"
-                      >
-                        Launch Phantom App ↗
-                      </a>
-                      <a
-                        href={solflareLinks.universalLink}
-                        target="_top"
-                        rel="noopener noreferrer"
-                        className="px-2.5 py-1 rounded bg-amber-600 text-white font-bold text-[10px] hover:bg-amber-500 transition-colors"
-                      >
-                        Launch Solflare App ↗
-                      </a>
-                    </div>
-                  )}
+                <div className="p-2.5 bg-rose-950/40 border border-rose-500/40 rounded-xl text-[11px] text-rose-300">
+                  {connectError}
                 </div>
               )}
 
-              <div className="space-y-2">
-                {/* Phantom */}
+              <div className="space-y-2.5">
+                {/* Phantom Wallet */}
                 <div className="space-y-1">
                   <button
-                    type="button"
                     onClick={() => handleConnectOption('phantom')}
-                    className="w-full p-3.5 bg-[#000000] hover:bg-neutral-950 border border-[#26262a] hover:border-violet-500/50 rounded-xl flex items-center justify-between transition-all group"
+                    className="w-full flex items-center justify-between p-3 rounded-xl bg-[#000000] hover:bg-violet-950/20 border border-[#26262a] hover:border-violet-500/50 transition-all text-left group"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-violet-600/20 border border-violet-500/30 flex items-center justify-center text-violet-400 font-bold text-xs">
-                        PH
+                      <div className="w-7 h-7 rounded-lg bg-purple-500/20 border border-purple-500/40 flex items-center justify-center font-bold text-purple-300 text-xs">
+                        P
                       </div>
-                      <div className="text-left">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-white group-hover:text-violet-300">
-                            Phantom {isMobile ? 'Mobile App' : 'Wallet'}
-                          </span>
-                          {hasPhantom ? (
-                            <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.2 rounded font-bold">
-                              Detected
-                            </span>
-                          ) : isMobile ? (
-                            <span className="text-[9px] bg-violet-500/20 text-violet-300 border border-violet-500/30 px-1.5 py-0.2 rounded font-bold">
-                              App Link
-                            </span>
-                          ) : null}
+                      <div>
+                        <div className="text-xs font-bold text-white group-hover:text-purple-300">
+                          Phantom {isMobile && !hasPhantom ? 'Mobile App' : 'Wallet'}
                         </div>
-                        <span className="text-[10px] text-neutral-400">
-                          {isMobile ? 'Launch native Phantom iOS/Android app' : 'Browser extension or mobile Solana wallet'}
-                        </span>
+                        <div className="text-[10px] text-neutral-400">
+                          {hasPhantom
+                            ? 'Extension detected'
+                            : isMobile
+                            ? 'Deep-link to Phantom Mobile app'
+                            : 'Browser extension'}
+                        </div>
                       </div>
                     </div>
-                    <span className="text-[10px] text-violet-400 group-hover:translate-x-0.5 transition-transform font-bold">
+                    <span className="text-[10px] text-purple-400 group-hover:translate-x-0.5 transition-transform font-bold">
                       {isMobile && !hasPhantom ? 'Open App →' : 'Connect →'}
                     </span>
                   </button>
@@ -190,42 +156,34 @@ export function WalletConnectButton() {
                       href={phantomLinks.universalLink}
                       target="_top"
                       rel="noopener noreferrer"
-                      className="text-[10px] text-violet-400 hover:text-violet-300 underline block pl-3"
+                      className="text-[10px] text-purple-400 hover:text-purple-300 underline block pl-3"
                     >
                       Direct link: Open in Phantom App ↗
                     </a>
                   )}
                 </div>
 
-                {/* Solflare */}
+                {/* Solflare Wallet */}
                 <div className="space-y-1">
                   <button
-                    type="button"
                     onClick={() => handleConnectOption('solflare')}
-                    className="w-full p-3.5 bg-[#000000] hover:bg-neutral-950 border border-[#26262a] hover:border-amber-500/50 rounded-xl flex items-center justify-between transition-all group"
+                    className="w-full flex items-center justify-between p-3 rounded-xl bg-[#000000] hover:bg-amber-950/20 border border-[#26262a] hover:border-amber-500/50 transition-all text-left group"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 font-bold text-xs">
-                        SF
+                      <div className="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center font-bold text-amber-300 text-xs">
+                        S
                       </div>
-                      <div className="text-left">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-white group-hover:text-amber-300">
-                            Solflare {isMobile ? 'Mobile App' : 'Wallet'}
-                          </span>
-                          {hasSolflare ? (
-                            <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.2 rounded font-bold">
-                              Detected
-                            </span>
-                          ) : isMobile ? (
-                            <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded font-bold">
-                              App Link
-                            </span>
-                          ) : null}
+                      <div>
+                        <div className="text-xs font-bold text-white group-hover:text-amber-300">
+                          Solflare {isMobile && !hasSolflare ? 'Mobile App' : 'Wallet'}
                         </div>
-                        <span className="text-[10px] text-neutral-400">
-                          {isMobile ? 'Launch native Solflare iOS/Android app' : 'Solana native web & extension wallet'}
-                        </span>
+                        <div className="text-[10px] text-neutral-400">
+                          {hasSolflare
+                            ? 'Extension detected'
+                            : isMobile
+                            ? 'Deep-link to Solflare Mobile app'
+                            : 'Browser extension'}
+                        </div>
                       </div>
                     </div>
                     <span className="text-[10px] text-amber-400 group-hover:translate-x-0.5 transition-transform font-bold">
@@ -314,7 +272,9 @@ export function WalletConnectButton() {
           <span className="font-semibold text-[11px] text-white">
             {truncateAddress(publicKeyString, 4)}
           </span>
-          <ChevronDown className={`w-3.5 h-3.5 text-neutral-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          <ChevronDown
+            className={`w-3.5 h-3.5 text-neutral-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          />
         </button>
       </div>
 
@@ -372,16 +332,28 @@ export function WalletConnectButton() {
             </div>
           </div>
 
-          {/* Quick Faucet Actions */}
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button
-              onClick={handleFaucetUsdc}
-              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-violet-600/10 hover:bg-violet-600/20 text-violet-300 border border-violet-500/30 transition-colors text-xs font-medium"
-            >
-              <Droplets className="w-3.5 h-3.5" />
-              {faucetSuccess ? 'Claimed +$5k' : '+5,000 USDC'}
-            </button>
+          {/* Real Balances */}
+          <div className="mt-3 p-2.5 bg-[#000000] rounded-xl border border-[#26262a] space-y-1">
+            <div className="flex justify-between text-xs">
+              <span className="text-neutral-400">Devnet USDC:</span>
+              <span className="font-bold text-violet-300">${formatUsdc(usdcBalance)}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-neutral-400">Devnet SOL:</span>
+              <span className="font-bold text-white">{solBalance} SOL</span>
+            </div>
+          </div>
 
+          {/* SOL Airdrop & Faucet Links */}
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <a
+              href="https://faucet.circle.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-violet-600/10 hover:bg-violet-600/20 text-violet-300 border border-violet-500/30 transition-colors text-xs font-medium text-center"
+            >
+              Circle Faucet ↗
+            </a>
             <button
               onClick={handleAirdropSol}
               disabled={isAirdropping}
