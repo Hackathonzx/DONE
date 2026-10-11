@@ -81,8 +81,8 @@ export function useTransactionExecution() {
         return result;
       } catch (err: unknown) {
         console.error('On-chain transaction failed:', err);
+        const parsed = parseProgramError(err);
         const errorMsg = err instanceof Error ? err.message : String(err);
-        const parsed = parseProgramError(errorMsg);
         setTxState({
           status: 'failed',
           actionName,
