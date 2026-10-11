@@ -240,7 +240,7 @@ export default function SettingsPage() {
                   onClick={requestDevnetSolAirdrop}
                 >
                   <ShieldCheck className="w-3.5 h-3.5 mr-1 text-violet-400" />
-                  +1.0 Devnet SOL
+                  Request Devnet SOL
                 </Button>
               </div>
 

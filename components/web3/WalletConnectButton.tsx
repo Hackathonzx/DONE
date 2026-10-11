@@ -360,7 +360,7 @@ export function WalletConnectButton() {
               className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[#000000] hover:bg-violet-950/20 text-neutral-200 border border-[#26262a] transition-colors text-xs font-medium"
             >
               <ShieldCheck className="w-3.5 h-3.5 text-violet-400" />
-              {isAirdropping ? 'Airdropping...' : '+1.0 SOL'}
+              {isAirdropping ? 'Airdropping...' : 'Request Devnet SOL'}
             </button>
           </div>
 

@@ -3,19 +3,22 @@
 import React, { useState } from 'react';
 import { MilestoneAccount, MilestoneState } from '@/types/protocol';
 import { formatUsdc, truncateAddress, getExplorerUrl } from '@/lib/solana';
-import { executeOnChainVerifyEvidence, executeOnChainReleaseMilestone } from '@/lib/protocol/anchorClient';
 import { useWallet } from '@/components/web3/WalletContext';
 import { PublicKey } from '@solana/web3.js';
-import { Card, CardHeader, CardContent, CardFooter } from '../ui/Card';
-import { Button } from '../ui/Button';
-import { Textarea } from '../ui/Input';
+import {
+  executeOnChainVerifyEvidence,
+  executeOnChainReleaseMilestone,
+} from '@/lib/protocol/anchorClient';
+import { Button } from '@/components/ui/Button';
+import { Textarea } from '@/components/ui/Input';
+import { Card, CardHeader, CardContent, CardFooter } from '@/components/ui/Card';
 import {
   ShieldCheck,
-  Coins,
   CheckCircle2,
-  ExternalLink,
-  Lock,
   FileCheck,
+  Coins,
+  Lock,
+  ExternalLink,
 } from 'lucide-react';
 
 interface VerificationCardProps {
@@ -35,11 +38,9 @@ export function VerificationCard({
   workerAddress,
   onExecute,
 }: VerificationCardProps) {
-  const { publicKey, signTransaction } = useWallet();
+  const { publicKey, signTransaction, refreshBalances } = useWallet();
   const [checkedCriteria, setCheckedCriteria] = useState<Record<number, boolean>>({});
-  const [verificationNotes, setVerificationNotes] = useState(
-    'Audited target program on Solana Devnet: program exists, is executable, owned by Upgradeable Loader, and ProgramData PDA is linked.'
-  );
+  const [verificationNotes, setVerificationNotes] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const [isReleasing, setIsReleasing] = useState(false);
 
@@ -51,7 +52,7 @@ export function VerificationCard({
   };
 
   const allCriteriaChecked =
-    milestone.dodCriteria.length > 0 &&
+    milestone.dodCriteria.length === 0 ||
     milestone.dodCriteria.every((_, idx) => checkedCriteria[idx]);
 
   const handleVerify = async () => {
@@ -68,6 +69,7 @@ export function VerificationCard({
             new PublicKey(milestone.publicKey),
             { signTransaction }
           );
+          await refreshBalances();
           return { signature: sig };
         }
       );
@@ -82,7 +84,7 @@ export function VerificationCard({
     try {
       await onExecute(
         'releaseMilestone',
-        `Releasing $${formatUsdc(milestone.amountUsdc)} USDC to Worker ATA (${truncateAddress(workerAddress, 4)})`,
+        `Releasing ${formatUsdc(milestone.amountUsdc)} USDC to worker token account on Devnet`,
         async () => {
           const sig = await executeOnChainReleaseMilestone(
             publicKey,
@@ -91,6 +93,7 @@ export function VerificationCard({
             new PublicKey(workerAddress),
             { signTransaction }
           );
+          await refreshBalances();
           return { signature: sig };
         }
       );
@@ -101,11 +104,11 @@ export function VerificationCard({
 
   if (milestone.state === MilestoneState.RELEASED) {
     return (
-      <Card className="border-emerald-500/40 font-mono">
+      <Card className="border-emerald-500/40 bg-emerald-950/10 font-mono">
         <CardHeader>
           <div className="flex items-center gap-2 text-emerald-400">
             <CheckCircle2 className="w-4 h-4" />
-            <h3 className="font-bold text-sm tracking-wider uppercase">
+            <h3 className="font-bold text-xs tracking-wider uppercase">
               MILESTONE SETTLED & PAID
             </h3>
           </div>
@@ -148,7 +151,7 @@ export function VerificationCard({
         <CardHeader>
           <div className="flex items-center gap-2 text-violet-400">
             <ShieldCheck className="w-4 h-4" />
-            <h3 className="font-bold text-sm tracking-wider uppercase">
+            <h3 className="font-bold text-xs tracking-wider uppercase">
               DoD CRITERIA VERIFIED — SETTLEMENT UNLOCKED
             </h3>
           </div>
@@ -199,7 +202,7 @@ export function VerificationCard({
         <CardHeader>
           <div className="flex items-center gap-2 text-amber-400">
             <FileCheck className="w-4 h-4" />
-            <h3 className="font-bold text-sm tracking-wider uppercase">
+            <h3 className="font-bold text-xs tracking-wider uppercase">
               VERIFICATION AUDIT IN PROGRESS
             </h3>
           </div>
@@ -209,55 +212,61 @@ export function VerificationCard({
           <p className="text-xs text-neutral-400">
             As the designated verifier ({truncateAddress(milestone.verifier, 6)}), check off each Definition of Done item against the submitted artifacts before confirming block verification.
           </p>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-neutral-300 tracking-wider uppercase block">
-                CANONICAL CRITERIA AUDIT CHECKLIST:
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  const all: Record<number, boolean> = {};
-                  milestone.dodCriteria.forEach((_, i) => {
-                    all[i] = true;
-                  });
-                  setCheckedCriteria(all);
-                }}
-                className="text-[10px] text-violet-300 bg-[#000000] px-2.5 py-1 rounded-lg border border-violet-500/30"
-              >
-                ⚡ Check All Criteria
-              </button>
-            </div>
+
+          {milestone.dodCriteria.length > 0 && (
             <div className="space-y-2">
-              {milestone.dodCriteria.map((c, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => toggleCriteria(idx)}
-                  className={`p-3 border rounded-xl cursor-pointer select-none transition-colors flex items-start gap-2.5 ${
-                    checkedCriteria[idx]
-                      ? 'bg-[#000000] border-emerald-500/50 text-neutral-100'
-                      : 'bg-[#000000] border-[#26262a] text-neutral-400'
-                  }`}
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-neutral-300 tracking-wider uppercase block">
+                  CANONICAL CRITERIA AUDIT CHECKLIST:
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const all: Record<number, boolean> = {};
+                    milestone.dodCriteria.forEach((_, i) => {
+                      all[i] = true;
+                    });
+                    setCheckedCriteria(all);
+                  }}
+                  className="text-[10px] text-violet-300 bg-[#000000] px-2.5 py-1 rounded-lg border border-violet-500/30"
                 >
+                  ⚡ Check All Criteria
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {milestone.dodCriteria.map((c, idx) => (
                   <div
-                    className={`w-4 h-4 rounded mt-0.5 border flex items-center justify-center flex-shrink-0 ${
+                    key={idx}
+                    onClick={() => toggleCriteria(idx)}
+                    className={`p-3 border rounded-xl cursor-pointer select-none transition-colors flex items-start gap-2.5 ${
                       checkedCriteria[idx]
-                        ? 'bg-emerald-500 border-emerald-500 text-black'
-                        : 'border-[#26262a]'
+                        ? 'bg-[#000000] border-emerald-500/50 text-neutral-100'
+                        : 'bg-[#000000] border-[#26262a] text-neutral-400'
                     }`}
                   >
-                    {checkedCriteria[idx] && <CheckCircle2 className="w-3.5 h-3.5 text-black" />}
+                    <div
+                      className={`w-4 h-4 rounded mt-0.5 border flex items-center justify-center flex-shrink-0 ${
+                        checkedCriteria[idx]
+                          ? 'bg-emerald-500 border-emerald-500 text-black'
+                          : 'border-[#26262a]'
+                      }`}
+                    >
+                      {checkedCriteria[idx] && <CheckCircle2 className="w-3.5 h-3.5 text-black" />}
+                    </div>
+                    <span className="text-xs leading-relaxed">{c}</span>
                   </div>
-                  <span className="text-xs leading-relaxed">{c}</span>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
+
           <Textarea
             label="VERIFICATION AUDIT SIGN-OFF NOTES"
             rows={2}
             value={verificationNotes}
             onChange={(e) => setVerificationNotes(e.target.value)}
+            placeholder="Attestation audit sign-off notes..."
             required
           />
         </CardContent>
@@ -288,7 +297,7 @@ export function VerificationCard({
       <CardHeader>
         <div className="flex items-center gap-2 text-neutral-400">
           <Lock className="w-4 h-4" />
-          <h3 className="font-bold text-sm tracking-wider uppercase text-neutral-300">
+          <h3 className="font-bold text-xs tracking-wider uppercase text-neutral-300">
             VERIFICATION PIPELINE LOCKED
           </h3>
         </div>

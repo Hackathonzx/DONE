@@ -11,11 +11,13 @@ import {
   getAssociatedTokenAddress,
   createAssociatedTokenAccountInstruction,
 } from '@solana/spl-token';
-import idl from './idl/done_protocol.json';
+import BN from 'bn.js';
+import IDL from './idl/done_protocol.json';
 import {
   DONE_PROGRAM_ID,
   DEVNET_USDC_MINT,
   DEVNET_RPC_URL,
+  truncateAddress,
 } from '../solana';
 import {
   getAgreementPda,
@@ -34,67 +36,98 @@ import {
 import { getOffchainMetadata } from './metadataStore';
 
 export interface WalletSigner {
-  publicKey?: PublicKey;
   signTransaction: (tx: Transaction) => Promise<Transaction>;
 }
 
+// Stale CLI smoke-test account to exclude from frontend display
+export const LEGACY_CLI_SMOKE_TEST_PDA = '5j9ppSy2X759be5ZHYuCgGeSwyZc3bKiAkGtf1Th67dF';
+
+/**
+ * Instantiate Anchor Program instance with connected signer or read-only provider
+ */
 export function getAnchorProgram(
   connection: Connection,
-  walletKey: PublicKey,
-  signTx: (tx: Transaction) => Promise<Transaction>
-): anchor.Program {
-  const dummyWallet = {
-    publicKey: walletKey,
-    signTransaction: signTx,
-    signAllTransactions: async (txs: Transaction[]) => {
-      const res: Transaction[] = [];
-      for (const t of txs) res.push(await signTx(t));
-      return res;
-    },
+  walletPubkey?: PublicKey,
+  signTransaction?: (tx: Transaction) => Promise<Transaction>
+) {
+  const dummyWallet: any = {
+    publicKey: walletPubkey || PublicKey.default,
+    signTransaction: (signTransaction ? (tx: any) => signTransaction(tx) : async (tx: any) => tx),
+    signAllTransactions: async (txs: any[]) => txs,
+    payer: anchor.web3.Keypair.generate(),
   };
-  const provider = new anchor.AnchorProvider(connection, dummyWallet as any, {
-    commitment: 'confirmed',
-    preflightCommitment: 'confirmed',
-  });
-  return new anchor.Program(idl as any, provider);
+
+  const provider = new anchor.AnchorProvider(
+    connection,
+    dummyWallet,
+    anchor.AnchorProvider.defaultOptions()
+  );
+
+  return new anchor.Program(IDL as anchor.Idl, provider);
 }
 
-function parseAgreementStatus(status: any): AgreementState {
-  if (!status) return AgreementState.DRAFT;
-  if ('draft' in status || 'Draft' in status) return AgreementState.DRAFT;
-  if ('funded' in status || 'Funded' in status) return AgreementState.FUNDED;
-  if ('active' in status || 'Active' in status) return AgreementState.ACTIVE;
-  if ('completed' in status || 'Completed' in status) return AgreementState.COMPLETED;
-  if ('cancelled' in status || 'Cancelled' in status) return AgreementState.CANCELLED;
+function parseAgreementStatus(statusObj: any): AgreementState {
+  if (!statusObj) return AgreementState.DRAFT;
+  if (typeof statusObj === 'string') {
+    const s = statusObj.toLowerCase();
+    if (s.includes('active')) return AgreementState.ACTIVE;
+    if (s.includes('funded')) return AgreementState.FUNDED;
+    if (s.includes('completed')) return AgreementState.COMPLETED;
+    if (s.includes('cancelled')) return AgreementState.CANCELLED;
+    return AgreementState.DRAFT;
+  }
+  if ('draft' in statusObj) return AgreementState.DRAFT;
+  if ('funded' in statusObj) return AgreementState.FUNDED;
+  if ('active' in statusObj) return AgreementState.ACTIVE;
+  if ('completed' in statusObj) return AgreementState.COMPLETED;
+  if ('cancelled' in statusObj) return AgreementState.CANCELLED;
   return AgreementState.DRAFT;
 }
 
-function parseMilestoneStatus(status: any): MilestoneState {
-  if (!status) return MilestoneState.PENDING;
-  if ('pending' in status || 'Pending' in status) return MilestoneState.PENDING;
-  if ('evidenceSubmitted' in status || 'EvidenceSubmitted' in status) return MilestoneState.EVIDENCE_SUBMITTED;
-  if ('verified' in status || 'Verified' in status) return MilestoneState.VERIFIED;
-  if ('released' in status || 'Released' in status) return MilestoneState.RELEASED;
+function parseMilestoneStatus(statusObj: any): MilestoneState {
+  if (!statusObj) return MilestoneState.PENDING;
+  if (typeof statusObj === 'string') {
+    const s = statusObj.toLowerCase();
+    if (s.includes('evidencesubmitted') || s.includes('submitted'))
+      return MilestoneState.EVIDENCE_SUBMITTED;
+    if (s.includes('verified')) return MilestoneState.VERIFIED;
+    if (s.includes('released')) return MilestoneState.RELEASED;
+    return MilestoneState.PENDING;
+  }
+  if ('evidenceSubmitted' in statusObj || 'evidence_submitted' in statusObj)
+    return MilestoneState.EVIDENCE_SUBMITTED;
+  if ('verified' in statusObj) return MilestoneState.VERIFIED;
+  if ('released' in statusObj) return MilestoneState.RELEASED;
   return MilestoneState.PENDING;
 }
 
-function bytesToHex(arr: number[] | Uint8Array): string {
-  return Array.from(arr).map((b) => b.toString(16).padStart(2, '0')).join('');
+function bytesToHex(bytes: number[] | Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 /**
- * Fetch all on-chain agreements and milestones deployed under DONE Protocol
+ * Fetch all real on-chain agreements and milestones deployed under DONE_PROGRAM_ID
  */
 export async function fetchAllOnChainAgreements(): Promise<AgreementAccount[]> {
-  const connection = new Connection(DEVNET_RPC_URL, 'confirmed');
-  const coder = new anchor.BorshAccountsCoder(idl as any);
-
   try {
-    const rawAccounts = await connection.getProgramAccounts(DONE_PROGRAM_ID, 'confirmed');
-    const agreementsMap = new Map<string, any>();
+    const connection = new Connection(DEVNET_RPC_URL, 'confirmed');
+    const coder = new anchor.BorshAccountsCoder(IDL as anchor.Idl);
+
+    const programAccounts = await connection.getProgramAccounts(DONE_PROGRAM_ID, {
+      commitment: 'confirmed',
+    });
+
+    const agreementsMap = new Map<string, { pubkey: PublicKey; data: any }>();
     const milestonesList: Array<{ pubkey: PublicKey; data: any }> = [];
 
-    for (const acc of rawAccounts) {
+    for (const acc of programAccounts) {
+      // Exclude legacy CLI smoke-test account
+      if (acc.pubkey.toBase58() === LEGACY_CLI_SMOKE_TEST_PDA) {
+        continue;
+      }
+
       if (acc.account.data.length === 175) {
         try {
           const decoded = coder.decode('Agreement', acc.account.data);
@@ -129,7 +162,7 @@ export async function fetchAllOnChainAgreements(): Promise<AgreementAccount[]> {
         .sort((a, b) => a.data.index - b.data.index);
 
       const milestones: MilestoneAccount[] = agMilestonesRaw.map((m) => {
-        const mOff = offchain?.milestones.find((om) => om.index === m.data.index);
+        const mOff = offchain?.milestones?.find((om) => om.index === m.data.index);
         const mStatus = parseMilestoneStatus(m.data.status);
         const evHex = bytesToHex(m.data.evidence_hash || m.data.evidenceHash || []);
         const dodHex = bytesToHex(m.data.definition_hash || m.data.definitionHash || []);
@@ -139,15 +172,10 @@ export async function fetchAllOnChainAgreements(): Promise<AgreementAccount[]> {
           publicKey: m.pubkey.toBase58(),
           agreement: agreementPdaStr,
           index: m.data.index,
-          title: mOff?.title || `Milestone #${m.data.index + 1} (${mOff?.verificationMethodLabel || 'Account Check'})`,
-          description: mOff?.description || 'Solana Devnet automated program-account verification recipe.',
+          title: mOff?.title || `Milestone #${m.data.index + 1}`,
+          description: mOff?.description || '',
           amountUsdc: Number(m.data.amount.toString()),
-          dodCriteria: mOff?.dodCriteria || [
-            'Program exists on Devnet cluster',
-            'Program account is executable',
-            'Owned by Upgradeable Loader',
-            'ProgramData PDA linkage is valid',
-          ],
+          dodCriteria: mOff?.dodCriteria || [],
           dodHash: dodHex,
           verificationType: VerificationType.SPONSOR,
           verifier: m.data.verifier.toBase58(),
@@ -155,18 +183,18 @@ export async function fetchAllOnChainAgreements(): Promise<AgreementAccount[]> {
           evidence: isEvSubmitted || mStatus !== MilestoneState.PENDING
             ? {
                 evidenceHash: evHex,
-                metadataUri: mOff?.metadataUri || 'https://explorer.solana.com/address/82MCkYR3RkcqBcYWDDixbaoi4bWL8w5ohu7UkJTiZXYM?cluster=devnet',
-                notes: mOff?.evidenceNotes || (mOff?.rejectionReason ? `Previous rejection: ${mOff.rejectionReason}` : 'Verified via automated account-check recipe.'),
+                metadataUri: mOff?.metadataUri || '',
+                notes: mOff?.evidenceNotes || (mOff?.rejectionReason ? `Previous rejection: ${mOff.rejectionReason}` : ''),
                 submittedAt: Date.now(),
                 submittedBy: agData.worker.toBase58(),
-                deliverableLinks: mOff?.evidenceLinks || ['https://github.com/Hackathonzx/DONE/tree/smart-contract'],
+                deliverableLinks: mOff?.evidenceLinks || [],
               }
             : undefined,
           verification: mStatus === MilestoneState.VERIFIED || mStatus === MilestoneState.RELEASED
             ? {
                 verifiedAt: Date.now(),
                 verifiedBy: m.data.verifier.toBase58(),
-                notes: 'Attested against committed DoD SHA-256 criteria on Devnet.',
+                notes: mOff?.evidenceNotes ? 'Attested against submitted evidence' : 'Verified on-chain',
               }
             : undefined,
         };
@@ -180,9 +208,9 @@ export async function fetchAllOnChainAgreements(): Promise<AgreementAccount[]> {
         publicKey: agreementPdaStr,
         sponsor: agData.sponsor.toBase58(),
         worker: agData.worker.toBase58(),
-        title: offchain?.title || `Devnet Agreement #${agData.agreement_id?.toString() || agData.agreementId?.toString()}`,
-        description: offchain?.description || 'USDC-funded verifiable work agreement on Solana Devnet.',
-        termsText: offchain?.termsText || 'Standard DONE Protocol escrow terms on Solana Devnet.',
+        title: offchain?.title || `Agreement (${truncateAddress(agreementPdaStr, 4)})`,
+        description: offchain?.description || '',
+        termsText: offchain?.termsText || '',
         termsHash: defHex,
         totalAmountUsdc: Number(agData.total_amount?.toString() || agData.totalAmount?.toString() || 0),
         state: agStatus,
@@ -199,23 +227,23 @@ export async function fetchAllOnChainAgreements(): Promise<AgreementAccount[]> {
 
     return agreements.sort((a, b) => b.createdAt - a.createdAt);
   } catch (err) {
-    console.error('Error fetching on-chain agreements:', err);
+    console.error('Error fetching on-chain agreements from Devnet:', err);
     return [];
   }
 }
 
 /**
- * Step 1: Sponsor creates Agreement and Milestone on Devnet
+ * Step 1: Sponsor creates Agreement and Milestones in one atomic transaction
  */
 export async function executeOnChainCreateAgreement(
   sponsor: PublicKey,
   worker: PublicKey,
-  agreementIdBn: anchor.BN,
-  totalAmountRaw: anchor.BN,
-  definitionHash32: Uint8Array,
+  agreementId: BN,
+  totalAmount: BN,
+  definitionHash: Uint8Array,
   milestones: Array<{
     index: number;
-    amountRaw: anchor.BN;
+    amountRaw: BN;
     definitionHash32: Uint8Array;
     verifier: PublicKey;
   }>,
@@ -223,17 +251,14 @@ export async function executeOnChainCreateAgreement(
 ): Promise<{ signature: string; agreementPda: string }> {
   const connection = new Connection(DEVNET_RPC_URL, 'confirmed');
   const program = getAnchorProgram(connection, sponsor, walletSigner.signTransaction);
+
+  const [agreementPda] = getAgreementPda(sponsor, agreementId, DONE_PROGRAM_ID);
   const [configPda] = getConfigPda(DONE_PROGRAM_ID);
-  const [agreementPda] = getAgreementPda(sponsor, agreementIdBn, DONE_PROGRAM_ID);
 
   const tx = new Transaction();
 
   const createAgreementIx = await (program.methods as any)
-    .createAgreement(
-      agreementIdBn,
-      totalAmountRaw,
-      Array.from(definitionHash32)
-    )
+    .createAgreement(agreementId, totalAmount, Array.from(definitionHash))
     .accountsStrict({
       sponsor,
       worker,
@@ -243,6 +268,7 @@ export async function executeOnChainCreateAgreement(
       systemProgram: SystemProgram.programId,
     })
     .instruction();
+
   tx.add(createAgreementIx);
 
   for (const m of milestones) {
@@ -261,6 +287,7 @@ export async function executeOnChainCreateAgreement(
         systemProgram: SystemProgram.programId,
       })
       .instruction();
+
     tx.add(milestoneIx);
   }
 
@@ -273,7 +300,9 @@ export async function executeOnChainCreateAgreement(
     skipPreflight: false,
     preflightCommitment: 'confirmed',
   });
+
   await connection.confirmTransaction(signature, 'confirmed');
+
   return { signature, agreementPda: agreementPda.toBase58() };
 }
 
@@ -289,6 +318,7 @@ export async function executeOnChainAcceptAgreement(
   const program = getAnchorProgram(connection, worker, walletSigner.signTransaction);
 
   const tx = new Transaction();
+
   const acceptIx = await (program.methods as any)
     .acceptAgreement()
     .accountsStrict({
@@ -296,6 +326,7 @@ export async function executeOnChainAcceptAgreement(
       agreement: agreementPda,
     })
     .instruction();
+
   tx.add(acceptIx);
 
   const { blockhash } = await connection.getLatestBlockhash('confirmed');
@@ -307,6 +338,7 @@ export async function executeOnChainAcceptAgreement(
     skipPreflight: false,
     preflightCommitment: 'confirmed',
   });
+
   await connection.confirmTransaction(signature, 'confirmed');
   return signature;
 }
@@ -321,6 +353,7 @@ export async function executeOnChainFundAgreement(
 ): Promise<string> {
   const connection = new Connection(DEVNET_RPC_URL, 'confirmed');
   const program = getAnchorProgram(connection, sponsor, walletSigner.signTransaction);
+
   const [escrowAuthority] = getEscrowAuthorityPda(agreementPda, DONE_PROGRAM_ID);
   const [escrowTokenAccount] = getEscrowTokenAccountPda(agreementPda, DONE_PROGRAM_ID);
 
@@ -332,6 +365,7 @@ export async function executeOnChainFundAgreement(
   );
 
   const tx = new Transaction();
+
   const info = await connection.getAccountInfo(sponsorTokenAccount);
   if (!info) {
     tx.add(
@@ -358,6 +392,7 @@ export async function executeOnChainFundAgreement(
       systemProgram: SystemProgram.programId,
     })
     .instruction();
+
   tx.add(fundIx);
 
   const { blockhash } = await connection.getLatestBlockhash('confirmed');
@@ -369,6 +404,7 @@ export async function executeOnChainFundAgreement(
     skipPreflight: false,
     preflightCommitment: 'confirmed',
   });
+
   await connection.confirmTransaction(signature, 'confirmed');
   return signature;
 }
@@ -387,6 +423,7 @@ export async function executeOnChainSubmitEvidence(
   const program = getAnchorProgram(connection, worker, walletSigner.signTransaction);
 
   const tx = new Transaction();
+
   const submitIx = await (program.methods as any)
     .submitEvidence(Array.from(evidenceHash32))
     .accountsStrict({
@@ -395,6 +432,7 @@ export async function executeOnChainSubmitEvidence(
       milestone: milestonePda,
     })
     .instruction();
+
   tx.add(submitIx);
 
   const { blockhash } = await connection.getLatestBlockhash('confirmed');
@@ -406,6 +444,7 @@ export async function executeOnChainSubmitEvidence(
     skipPreflight: false,
     preflightCommitment: 'confirmed',
   });
+
   await connection.confirmTransaction(signature, 'confirmed');
   return signature;
 }
@@ -423,6 +462,7 @@ export async function executeOnChainVerifyEvidence(
   const program = getAnchorProgram(connection, verifier, walletSigner.signTransaction);
 
   const tx = new Transaction();
+
   const verifyIx = await (program.methods as any)
     .verifyEvidence()
     .accountsStrict({
@@ -431,6 +471,7 @@ export async function executeOnChainVerifyEvidence(
       milestone: milestonePda,
     })
     .instruction();
+
   tx.add(verifyIx);
 
   const { blockhash } = await connection.getLatestBlockhash('confirmed');
@@ -442,6 +483,7 @@ export async function executeOnChainVerifyEvidence(
     skipPreflight: false,
     preflightCommitment: 'confirmed',
   });
+
   await connection.confirmTransaction(signature, 'confirmed');
   return signature;
 }
@@ -460,6 +502,7 @@ export async function executeOnChainRejectEvidence(
   const program = getAnchorProgram(connection, verifier, walletSigner.signTransaction);
 
   const tx = new Transaction();
+
   const rejectIx = await (program.methods as any)
     .rejectEvidence(Array.from(rejectionReasonHash32))
     .accountsStrict({
@@ -468,6 +511,7 @@ export async function executeOnChainRejectEvidence(
       milestone: milestonePda,
     })
     .instruction();
+
   tx.add(rejectIx);
 
   const { blockhash } = await connection.getLatestBlockhash('confirmed');
@@ -479,6 +523,7 @@ export async function executeOnChainRejectEvidence(
     skipPreflight: false,
     preflightCommitment: 'confirmed',
   });
+
   await connection.confirmTransaction(signature, 'confirmed');
   return signature;
 }
@@ -495,6 +540,7 @@ export async function executeOnChainReleaseMilestone(
 ): Promise<string> {
   const connection = new Connection(DEVNET_RPC_URL, 'confirmed');
   const program = getAnchorProgram(connection, payer, walletSigner.signTransaction);
+
   const [escrowAuthority] = getEscrowAuthorityPda(agreementPda, DONE_PROGRAM_ID);
   const [escrowTokenAccount] = getEscrowTokenAccountPda(agreementPda, DONE_PROGRAM_ID);
 
@@ -506,6 +552,7 @@ export async function executeOnChainReleaseMilestone(
   );
 
   const tx = new Transaction();
+
   const info = await connection.getAccountInfo(workerTokenAccount);
   if (!info) {
     tx.add(
@@ -531,6 +578,7 @@ export async function executeOnChainReleaseMilestone(
       tokenProgram: TOKEN_PROGRAM_ID,
     })
     .instruction();
+
   tx.add(releaseIx);
 
   const { blockhash } = await connection.getLatestBlockhash('confirmed');
@@ -542,6 +590,7 @@ export async function executeOnChainReleaseMilestone(
     skipPreflight: false,
     preflightCommitment: 'confirmed',
   });
+
   await connection.confirmTransaction(signature, 'confirmed');
   return signature;
 }
@@ -558,10 +607,12 @@ export async function executeOnChainCancelAgreement(
 ): Promise<string> {
   const connection = new Connection(DEVNET_RPC_URL, 'confirmed');
   const program = getAnchorProgram(connection, sponsor, signTx);
+
   const [escrowAuthority] = getEscrowAuthorityPda(agreementPda, DONE_PROGRAM_ID);
   const [escrowTokenAccount] = getEscrowTokenAccountPda(agreementPda, DONE_PROGRAM_ID);
 
   const tx = new Transaction();
+
   const cancelIx = await (program.methods as any)
     .cancelAgreement()
     .accountsStrict({
@@ -575,6 +626,7 @@ export async function executeOnChainCancelAgreement(
       tokenProgram: TOKEN_PROGRAM_ID,
     })
     .instruction();
+
   tx.add(cancelIx);
 
   const { blockhash } = await connection.getLatestBlockhash('confirmed');
@@ -586,6 +638,77 @@ export async function executeOnChainCancelAgreement(
     skipPreflight: false,
     preflightCommitment: 'confirmed',
   });
+
   await connection.confirmTransaction(signature, 'confirmed');
+  return signature;
+}
+
+/**
+ * Step 7a: Create and partially sign mutual cancellation transaction (Party 1)
+ */
+export async function createPartialCancelAgreement(
+  sponsor: PublicKey,
+  worker: PublicKey,
+  agreementPda: PublicKey,
+  sponsorTokenAccount: PublicKey,
+  signer: (tx: Transaction) => Promise<Transaction>
+): Promise<{ partialTxBase64: string; signedBy: string }> {
+  const connection = new Connection(DEVNET_RPC_URL, "confirmed");
+  const program = getAnchorProgram(connection, sponsor, signer);
+
+  const [escrowAuthority] = getEscrowAuthorityPda(agreementPda, DONE_PROGRAM_ID);
+  const [escrowTokenAccount] = getEscrowTokenAccountPda(agreementPda, DONE_PROGRAM_ID);
+
+  const tx = new Transaction();
+
+  const cancelIx = await (program.methods as any)
+    .cancelAgreement()
+    .accountsStrict({
+      sponsor,
+      worker,
+      agreement: agreementPda,
+      paymentMint: DEVNET_USDC_MINT,
+      sponsorTokenAccount,
+      escrowAuthority,
+      escrowTokenAccount,
+      tokenProgram: TOKEN_PROGRAM_ID,
+    })
+    .instruction();
+
+  tx.add(cancelIx);
+
+  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  tx.recentBlockhash = blockhash;
+  tx.feePayer = sponsor;
+
+  const partiallySignedTx = await signer(tx);
+  const partialTxBase64 = partiallySignedTx
+    .serialize({ requireAllSignatures: false, verifySignatures: false })
+    .toString("base64");
+
+  const signedBy = partiallySignedTx.signatures.find((s) => s.signature !== null)?.publicKey.toBase58() || "";
+
+  return { partialTxBase64, signedBy };
+}
+
+/**
+ * Step 7b: Co-sign partially signed cancellation transaction and broadcast to Solana Devnet (Party 2)
+ */
+export async function cosignAndBroadcastCancelAgreement(
+  partialTxBase64: string,
+  cosigner: (tx: Transaction) => Promise<Transaction>
+): Promise<string> {
+  const connection = new Connection(DEVNET_RPC_URL, "confirmed");
+  const txBuffer = Buffer.from(partialTxBase64, "base64");
+  const tx = Transaction.from(txBuffer);
+
+  const fullySignedTx = await cosigner(tx);
+
+  const signature = await connection.sendRawTransaction(fullySignedTx.serialize(), {
+    skipPreflight: false,
+    preflightCommitment: "confirmed",
+  });
+
+  await connection.confirmTransaction(signature, "confirmed");
   return signature;
 }

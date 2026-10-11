@@ -3,9 +3,9 @@
 import React, { useState } from 'react';
 import { AgreementAccount } from '@/types/protocol';
 import { formatUsdc, truncateAddress, DONE_PROGRAM_ID } from '@/lib/solana';
-import { useWallet } from '../web3/WalletContext';
-import { Button } from '../ui/Button';
-import { SlideDrawer } from '../ui/SlideDrawer';
+import { useWallet } from '@/components/web3/WalletContext';
+import { Button } from '@/components/ui/Button';
+import { SlideDrawer } from '@/components/ui/SlideDrawer';
 import { PublicKey } from '@solana/web3.js';
 import { Lock, ArrowRight } from 'lucide-react';
 import { executeOnChainFundAgreement } from '@/lib/protocol/anchorClient';

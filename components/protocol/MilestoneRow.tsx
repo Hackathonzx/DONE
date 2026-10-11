@@ -4,8 +4,8 @@ import React from 'react';
 import Link from 'next/link';
 import { MilestoneAccount } from '@/types/protocol';
 import { formatUsdc, truncateAddress, getExplorerUrl } from '@/lib/solana';
-import { MilestoneStateBadge, VerificationTypeBadge } from '../ui/Badge';
-import { Button } from '../ui/Button';
+import { MilestoneStateBadge, VerificationTypeBadge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { ExternalLink, ChevronRight } from 'lucide-react';
 
 interface MilestoneRowProps {

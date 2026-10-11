@@ -3,10 +3,10 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { DoneLogo } from './DoneLogo';
-import { NetworkBadge } from '../web3/NetworkBadge';
-import { WalletConnectButton } from '../web3/WalletConnectButton';
-import { useWallet } from '../web3/WalletContext';
+import { DoneLogo } from '@/components/protocol/DoneLogo';
+import { NetworkBadge } from '@/components/web3/NetworkBadge';
+import { WalletConnectButton } from '@/components/web3/WalletConnectButton';
+import { useWallet } from '@/components/web3/WalletContext';
 
 export function Navbar() {
   const pathname = usePathname();

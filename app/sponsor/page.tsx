@@ -21,21 +21,20 @@ import {
   AlertCircle,
   ArrowRight,
   Lock,
+  Wallet,
 } from 'lucide-react';
 
 export default function SponsorDashboardPage() {
-  const { publicKeyString } = useWallet();
+  const { connected, publicKeyString } = useWallet();
   const { data: allAgreements = [], isLoading } = useAgreements();
   const { txState, execute, reset: resetTx, isOpen: isTxOpen } = useTransactionExecution();
   const queryClient = useQueryClient();
-
   const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
 
-  // Filter agreements where current wallet is sponsor, or show all if none
-  const sponsorAgreements = publicKeyString
+  // Strict filter: only agreements where connected wallet is Sponsor
+  const agreements = publicKeyString
     ? allAgreements.filter((a) => a.sponsor === publicKeyString)
-    : allAgreements;
-  const agreements = sponsorAgreements.length > 0 ? sponsorAgreements : allAgreements;
+    : [];
 
   const [drawerState, setDrawerState] = useState<{
     isOpen: boolean;
@@ -70,7 +69,7 @@ export default function SponsorDashboardPage() {
     const released = a.milestones
       .filter((m) => m.state === MilestoneState.RELEASED)
       .reduce((s, m) => s + m.amountUsdc, 0);
-    return sum + (a.state !== AgreementState.DRAFT ? a.totalAmountUsdc - released : 0);
+    return sum + (a.state !== AgreementState.DRAFT && a.state !== AgreementState.CANCELLED ? a.totalAmountUsdc - released : 0);
   }, 0);
 
   const totalSettledPaid = agreements.reduce((sum, a) => {
@@ -97,7 +96,6 @@ export default function SponsorDashboardPage() {
           await queryClient.invalidateQueries({ queryKey: AGREEMENTS_QUERY_KEY });
         }}
       />
-
       <TxStateModal state={txState} isOpen={isTxOpen} onClose={resetTx} />
 
       {drawerState.agreement && (
@@ -112,49 +110,53 @@ export default function SponsorDashboardPage() {
       )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#26262a] pb-4">
-        <div className="flex items-center gap-3">
-          <DoneLogo className="w-8 h-8" />
-          <div>
-            <div className="flex items-center gap-2 text-xs text-violet-400 mb-0.5">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span className="font-bold tracking-wider">CAPITAL SPONSOR</span>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-bold text-white">Sponsor Hub</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#26262a]">
+        <div>
+          <div className="flex items-center gap-2">
+            <DoneLogo className="w-6 h-6" />
+            <h1 className="text-xl font-bold uppercase tracking-wide text-white">
+              Sponsor Operations Console
+            </h1>
           </div>
+          <p className="text-xs text-neutral-400 mt-0.5">
+            Manage your USDC-funded milestone escrows and attestations on Solana Devnet
+          </p>
         </div>
+
         <Button
           variant="primary"
           size="sm"
           onClick={() => setIsCreateDrawerOpen(true)}
-          className="flex items-center gap-1.5 self-start sm:self-auto bg-violet-600 hover:bg-violet-500"
+          className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 font-bold"
         >
           <PlusCircle className="w-4 h-4" />
-          New Escrow
+          <span>New Agreement</span>
         </Button>
       </div>
 
-      {/* Metrics */}
+      {/* Metrics Row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl space-y-1">
-          <span className="text-[10px] text-neutral-400 uppercase tracking-wider block font-semibold">
-            Locked in Escrow
+        <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl">
+          <span className="text-[10px] text-neutral-400 uppercase tracking-widest block font-semibold mb-1">
+            Escrow Locked (Active)
           </span>
-          <div className="text-2xl font-black text-white">
-            ${formatUsdc(totalEscrowLocked)} <span className="text-xs text-neutral-400 font-normal">USDC</span>
+          <div className="text-2xl font-black text-violet-400">
+            ${formatUsdc(totalEscrowLocked)} <span className="text-xs text-neutral-500 font-normal">USDC</span>
           </div>
         </div>
-        <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl space-y-1">
-          <span className="text-[10px] text-neutral-400 uppercase tracking-wider block font-semibold">
-            Total Settled
+
+        <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl">
+          <span className="text-[10px] text-neutral-400 uppercase tracking-widest block font-semibold mb-1">
+            Settled & Disbursed
           </span>
           <div className="text-2xl font-black text-emerald-400">
-            ${formatUsdc(totalSettledPaid)} <span className="text-xs text-neutral-400 font-normal">USDC</span>
+            ${formatUsdc(totalSettledPaid)} <span className="text-xs text-neutral-500 font-normal">USDC</span>
           </div>
         </div>
-        <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl space-y-1">
-          <span className="text-[10px] text-neutral-400 uppercase tracking-wider block font-semibold">
-            Pending Audits
+
+        <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl">
+          <span className="text-[10px] text-neutral-400 uppercase tracking-widest block font-semibold mb-1">
+            Pending Evidence Audits
           </span>
           <div className="text-2xl font-black text-amber-400">
             {pendingVerifications.length}
@@ -162,108 +164,150 @@ export default function SponsorDashboardPage() {
         </div>
       </div>
 
-      {/* Review Queue */}
+      {/* Action Required: Pending Verification Audits */}
       {pendingVerifications.length > 0 && (
-        <div className="p-5 bg-[#000000] border border-amber-500/30 rounded-2xl space-y-3">
-          <div className="flex items-center gap-2 text-amber-400 border-b border-[#26262a] pb-2">
-            <AlertCircle className="w-4 h-4" />
-            <h3 className="font-bold text-xs uppercase tracking-wider">
-              Deliverables Ready for Verification ({pendingVerifications.length})
-            </h3>
+        <div className="p-4 bg-amber-950/20 border border-amber-500/30 rounded-2xl space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-amber-400 text-xs font-bold">
+              <AlertCircle className="w-4 h-4" />
+              <span>Evidence Submitted Awaiting Attestation ({pendingVerifications.length})</span>
+            </div>
           </div>
-          <div className="space-y-2">
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {pendingVerifications.map(({ agreement, milestone }) => (
               <div
                 key={milestone.publicKey}
-                className="p-3.5 bg-[#000000] border border-[#26262a] rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                className="p-3 bg-[#000000] border border-[#26262a] rounded-xl flex items-center justify-between text-xs"
               >
                 <div>
-                  <div className="font-bold text-white">{milestone.title}</div>
-                  <div className="text-neutral-400 text-[11px] mt-0.5">
-                    {agreement.title} • Worker: {truncateAddress(agreement.worker, 4)}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-violet-400 text-xs">
-                    ${formatUsdc(milestone.amountUsdc)} USDC
+                  <span className="font-bold text-white block">
+                    #{milestone.index + 1}: {milestone.title}
                   </span>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => openDrawer('verify', agreement, milestone)}
-                    className="text-xs"
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5 mr-1" />
-                    Verify
-                  </Button>
+                  <span className="text-[10px] text-neutral-400">
+                    Agreement: {truncateAddress(agreement.publicKey, 4)}
+                  </span>
                 </div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => openDrawer('verify', agreement, milestone)}
+                  className="text-xs bg-amber-500 hover:bg-amber-400 text-black font-bold"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 mr-1" />
+                  Review & Verify
+                </Button>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Sponsored Agreements List */}
+      {/* Agreements List */}
       <div className="space-y-3">
-        <h3 className="text-xs uppercase font-bold text-neutral-400 tracking-wider">
-          Sponsored Escrows ({agreements.length})
-        </h3>
-        {isLoading ? (
+        <h2 className="text-xs font-bold uppercase tracking-wider text-neutral-400">
+          Your Escrow Agreements ({agreements.length})
+        </h2>
+
+        {!connected ? (
+          <div className="p-12 text-center bg-[#000000] border border-[#26262a] rounded-2xl space-y-3 text-xs">
+            <Wallet className="w-10 h-10 mx-auto text-neutral-600" />
+            <h3 className="text-sm font-bold text-white">Connect Solana Wallet</h3>
+            <p className="text-neutral-400 max-w-sm mx-auto">
+              Connect your Phantom or Solflare wallet to view and manage agreements created by your address.
+            </p>
+          </div>
+        ) : isLoading ? (
           <div className="p-8 text-center bg-[#000000] border border-[#26262a] rounded-2xl text-xs text-neutral-400">
-            Loading sponsored agreements from Devnet...
+            Fetching on-chain accounts from Solana Devnet...
           </div>
         ) : agreements.length === 0 ? (
-          <div className="p-8 text-center bg-[#000000] border border-[#26262a] rounded-2xl space-y-3">
-            <DoneLogo className="w-12 h-12 mx-auto" />
-            <p className="text-xs text-neutral-400">No sponsored agreements yet.</p>
-            <Button variant="primary" onClick={() => setIsCreateDrawerOpen(true)}>
-              <PlusCircle className="w-4 h-4 mr-1.5" /> Create Agreement
-            </Button>
+          <div className="p-12 text-center bg-[#000000] border border-[#26262a] rounded-2xl space-y-3 text-xs">
+            <DoneLogo className="w-10 h-10 mx-auto opacity-50" />
+            <h3 className="text-sm font-bold text-white">No Sponsor Agreements Found</h3>
+            <p className="text-neutral-400 max-w-sm mx-auto">
+              You haven&apos;t created any escrow agreements with this wallet yet. Click below to create your first agreement.
+            </p>
+            <div className="pt-2">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setIsCreateDrawerOpen(true)}
+                className="bg-violet-600 hover:bg-violet-500 font-bold"
+              >
+                <PlusCircle className="w-4 h-4 mr-1.5" /> Create Escrow Agreement
+              </Button>
+            </div>
           </div>
         ) : (
           agreements.map((agreement) => (
             <div
               key={agreement.publicKey}
-              className="p-4 bg-[#000000] border border-[#26262a] hover:border-violet-500/40 rounded-2xl transition-all space-y-3 text-xs"
+              className="p-5 bg-[#000000] border border-[#26262a] hover:border-violet-500/40 rounded-2xl space-y-3 transition-colors"
             >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <AgreementStateBadge state={agreement.state} />
-                  <Link
-                    href={`/agreements/${agreement.publicKey}`}
-                    className="font-bold text-white hover:text-violet-300 text-sm"
-                  >
-                    {agreement.title}
-                  </Link>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <AgreementStateBadge state={agreement.state} />
+                    <Link
+                      href={`/agreements/${agreement.publicKey}`}
+                      className="text-base font-bold text-white hover:text-violet-300 transition-colors"
+                    >
+                      {agreement.title}
+                    </Link>
+                  </div>
+                  <div className="text-xs text-neutral-400 flex items-center gap-3">
+                    <span>Worker: {truncateAddress(agreement.worker, 4)}</span>
+                    <span>•</span>
+                    <span>PDA: {truncateAddress(agreement.publicKey, 4)}</span>
+                    <span>•</span>
+                    <span className={agreement.workerAccepted ? 'text-emerald-400' : 'text-amber-400'}>
+                      {agreement.workerAccepted ? 'Accepted ✓' : 'Awaiting Worker Acceptance'}
+                    </span>
+                  </div>
                 </div>
-                <div className="font-bold text-violet-400 text-sm">
-                  ${formatUsdc(agreement.totalAmountUsdc)} USDC
+
+                <div className="text-left sm:text-right">
+                  <div className="text-base font-black text-violet-400">
+                    ${formatUsdc(agreement.totalAmountUsdc)} USDC
+                  </div>
+                  <div className="text-[11px] text-neutral-400">
+                    {agreement.milestones.length} Milestones
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center justify-between pt-2 border-t border-[#26262a]/60 text-neutral-400">
-                <span className="flex items-center gap-2">
-                  <span>Worker: {truncateAddress(agreement.worker, 4)}</span>
-                  <span>•</span>
-                  <span className={agreement.workerAccepted ? 'text-emerald-400' : 'text-amber-400'}>
-                    {agreement.workerAccepted ? 'Accepted ✓' : 'Awaiting Acceptance'}
-                  </span>
-                </span>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#26262a]/60">
+                <div className="flex gap-1.5 flex-wrap">
+                  {agreement.milestones.map((m, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => openDrawer('inspect', agreement, m)}
+                      className="px-2 py-0.5 rounded-lg text-[11px] border bg-[#000000] border-[#26262a] text-neutral-300 hover:border-violet-500/40"
+                    >
+                      #{idx + 1}: ${formatUsdc(m.amountUsdc)}
+                    </button>
+                  ))}
+                </div>
+
                 <div className="flex items-center gap-2">
                   {agreement.state === AgreementState.DRAFT && agreement.workerAccepted && (
                     <Button
                       variant="primary"
                       size="sm"
                       onClick={() => openDrawer('fund', agreement)}
-                      className="text-xs bg-emerald-600 hover:bg-emerald-500"
+                      className="text-xs bg-emerald-600 hover:bg-emerald-500 font-bold"
                     >
                       <Lock className="w-3.5 h-3.5 mr-1" /> Fund Escrow
                     </Button>
                   )}
+
                   <Link
                     href={`/agreements/${agreement.publicKey}`}
-                    className="text-violet-400 hover:text-violet-300 flex items-center gap-1 font-semibold"
+                    className="px-3 py-1.5 rounded-xl bg-[#000000] hover:bg-neutral-900 border border-[#26262a] text-neutral-300 text-xs font-semibold inline-flex items-center gap-1"
                   >
-                    Manage <ArrowRight className="w-3.5 h-3.5" />
+                    Details <ArrowRight className="w-3 h-3" />
                   </Link>
                 </div>
               </div>
