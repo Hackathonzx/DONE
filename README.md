@@ -6,28 +6,7 @@ DONE Protocol is a Solana program for USDC-funded work agreements. A sponsor cre
 
 > **Current status:** deployed and smoke-tested on Solana Devnet. 
 
-## Start here
 
-- **Frontend teammate:** read [`docs/FRONTEND_INTEGRATION.md`]() first.
-- **FRONTEND_MESSAGE:** https://docs.google.com/document/d/1NJMJOkSi8_ZFK4H69xi3xNsn0jJRX1x_XbPa_qumCdA/edit?usp=sharing
-- **Instruction/account/PDA reference:** [`docs/ON_CHAIN_SPEC.md`]()
-- **Security assumptions and limitations:** [`docs/SECURITY_AND_TRUST_MODEL.md`]().
-- **Automated account-check attestation:** [`docs/VERIFICATION_RECIPE.md`]().
-- **Devnet addresses and transactions:** [`docs/DEVNET_DEPLOYMENT_LOG.md`]().
-- **IDL export instructions:** [`docs/IDL_AND_SETUP.md`]().
-- **Submission checklist:** [`docs/SUBMISSION_CHECKLIST.md`](https://docs.google.com/document/d/11hNi3npOYO7GrwvekcIFo13zDkYYjudhxtbyHvboOL8/edit?usp=sharing).
-- check here for deployed IDL: \docs\idl\done_protocol.devnet.json
-
-## Documentation
-
-- [Frontend integration guide](https://docs.google.com/document/d/1eRdrpOdlyEiV4Pzyi79fMp61ykGWpQtxmu3P7Wd_-EM/edit?usp=sharing)
-- [On-chain instructions, accounts, PDAs, and events](https://docs.google.com/document/d/18TuPMDJIuwzIy4m0CfpC50pxoMBBVj4_U8xZgg6azco/edit?usp=sharing)
-- [Security and trust model](https://docs.google.com/document/d/1jDiAhl7Xs88UwZdHZ0AUVeuLS0_AtD3PyZUJe0RvWzo/edit?usp=sharing)
-- [Automated account-check verification recipe](https://docs.google.com/document/d/19De09nQx0iA7cVJRiCD1fOFTq6LjAmKyEDjWKbm_8gA/edit?usp=sharing)
-- [Devnet deployment and smoke-test record](https://docs.google.com/document/d/1J5rZmAObT8nhAE2GXgGYFfkh_9S9mNIjDR1JO3tvXyo/edit?usp=sharing)
-- [IDL and setup instructions](https://docs.google.com/document/d/1xvlOSvJ_gefdLs5BHcXtLiZvEW99ZWbDdbR5eCGCYHk/edit?usp=sharing)
-
-The deployed IDL is the interface source of truth for client integration. Do not manually reconstruct or edit it. Confirm the checked-out Rust source, generated types, and deployed IDL refer to the same program version before integration or release.
 
 ## Devnet deployment
 
@@ -72,8 +51,6 @@ Explorer links:
 - [Devnet deployment and smoke-test record](docs/DEVNET_DEPLOYMENT_LOG.md)
 - [IDL and setup instructions](docs/IDL_AND_SETUP.md)
 
-The deployed IDL is the interface source of truth for client integration. Do not manually reconstruct or edit it. Confirm the checked-out Rust source, generated types, and deployed IDL refer to the same program version before integration or release.
-
 
 ## Build and test
 
@@ -98,19 +75,6 @@ These scripts were used during the devnet validation work:
 - `verify_solana_program.ts` — `--prepare` calculates Definition of Done/evidence commitments after checking a program account; `--attest` repeats the checks and invokes `verifyEvidence` using the configured verifier keypair.
 - `devnet_smoke_test.ts` — `--start` creates, accepts, funds, and submits evidence for a fresh one-USDC smoke-test agreement; `--finish` settles it after attestation. `--start` creates new on-chain state and spends test USDC, rent, and fees, so do not rerun casually.
 
-
-## What the frontend must respect
-
-- Always use the Devnet cluster and the USDC mint listed above for this deployment.
-- Amounts are raw SPL token units (`USDC amount × 1,000,000`).
-- Use the deployed IDL as the client interface; method names are camelCase in Anchor TypeScript (`createAgreement`, `acceptAgreement`, etc.).
-- Derive PDAs using the exact seed bytes and little-endian integer encodings in `docs/ON_CHAIN_SPEC.md`.
-- Do not allow funding until the assigned worker accepted and the allocation is complete; the program also enforces these conditions.
-- A verifier must equal the milestone's stored verifier public key.
-- Never allow UI-only checks to substitute for the program's authorization/state checks.
-- Cancellation requires both parties to sign the same transaction. There is no separate on-chain pending-cancellation approval state.
-- Do not describe the evidence hash as proof of work correctness. The current recipe proves only defined account-level checks; an authorized verifier attests on-chain.
-- Never put secret key JSON, seed phrases, or private keys in frontend source, documentation, commits, or browser bundles.
 
 ## Devnet smoke-test evidence
 
