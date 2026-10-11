@@ -2,460 +2,502 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { PublicKey } from '@solana/web3.js';
-import { VerificationType } from '@/types/protocol';
-import {
-  hashAgreementTerms,
-  hashDefinitionOfDone,
-  uint8ArrayToHex,
-} from '@/lib/protocol/hashing';
-import { parseUsdc, formatUsdc, truncateAddress } from '@/lib/solana';
-import { protocolClient, DEMO_KEYS } from '@/lib/protocol/client';
+import Link from 'next/link';
+import { useWallet } from '@/components/web3/WalletContext';
 import { useTransactionExecution } from '@/hooks/useTransactionExecution';
-import { TxStateModal } from '@/components/web3/TxStateModal';
+import { formatUsdc } from '@/lib/solana';
 import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Input';
-import { Card, CardHeader, CardContent, CardFooter } from '@/components/ui/Card';
+import { Card } from '@/components/ui/Card';
+import { TxStateModal } from '@/components/web3/TxStateModal';
+import { DoneLogo } from '@/components/protocol/DoneLogo';
+import { PublicKey } from '@solana/web3.js';
+import BN from 'bn.js';
+import { executeOnChainCreateAgreement } from '@/lib/protocol/anchorClient';
+import { prepareAccountVerificationRecipe } from '@/lib/protocol/recipe';
+import { saveOffchainMetadata } from '@/lib/protocol/metadataStore';
+import { hashAgreementTerms, hashDoDCriteria } from '@/lib/protocol/hashing';
 import {
-  PlusCircle,
-  Trash2,
-  ShieldCheck,
-  Hash,
-  ArrowRight,
   ArrowLeft,
-  CheckCircle2,
-  Coins,
+  ArrowRight,
+  Plus,
+  Trash2,
+  Lock,
+  ShieldCheck,
+  X,
 } from 'lucide-react';
-
-interface MilestoneDraft {
-  title: string;
-  description: string;
-  amountUsdcString: string;
-  verificationType: VerificationType;
-  criteria: string[];
-  computedDodHash: string;
-}
 
 export default function NewAgreementPage() {
   const router = useRouter();
-  const { txState, execute, reset, isOpen } = useTransactionExecution();
+  const { connected, publicKey, publicKeyString, signTransaction } = useWallet();
+  const { txState, execute, reset: resetTx, isOpen: isTxOpen } = useTransactionExecution();
 
-  // Step 1: Agreement Terms
-  const [workerPubkey, setWorkerPubkey] = useState(DEMO_KEYS.WORKER);
-  const [title, setTitle] = useState('Full-Stack Web3 Integration & Audit');
-  const [description, setDescription] = useState(
-    'Implementation of Solana Anchor client adapter with comprehensive DoD verification pipeline.'
-  );
-  const [termsText, setTermsText] = useState(
-    '1. All milestones must strictly satisfy committed Definition of Done criteria.\n2. Work artifacts must be permanently stored on Arweave or IPFS.\n3. Disbursals are final upon block confirmation.'
-  );
-  const [computedTermsHash, setComputedTermsHash] = useState('');
+  const [step, setStep] = useState<1 | 2>(1);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [termsText, setTermsText] = useState('');
+  const [workerAddress, setWorkerAddress] = useState('');
+  const [targetProgramId, setTargetProgramId] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
-  // Step 2: Milestones
-  const [milestones, setMilestones] = useState<MilestoneDraft[]>([
+  const [newCriteriaInputs, setNewCriteriaInputs] = useState<Record<number, string>>({});
+
+  const [milestones, setMilestones] = useState([
     {
-      title: 'Milestone 0: Protocol Client Architecture & Anchor IDL',
-      description: 'Implement typed client interface with PDA derivation and deterministic error handling.',
-      amountUsdcString: '5000',
-      verificationType: VerificationType.SPONSOR,
-      criteria: [
-        'Complete TypeScript client matching Anchor IDL instructions',
-        'Unit tests for canonical DoD and Terms SHA-256 hashing',
-        'Passing lint check with zero compiler warnings',
-      ],
-      computedDodHash: '',
-    },
-    {
-      title: 'Milestone 1: Web3 Verification & Settlement UI',
-      description: 'Complete UI pipeline from evidence submission to on-chain settlement.',
-      amountUsdcString: '7500',
-      verificationType: VerificationType.SPONSOR,
-      criteria: [
-        'Deterministic status transitions driven by block confirmation',
-        'Solana Explorer signature links on all mutations',
-        'End-to-end integration verified on Devnet',
-      ],
-      computedDodHash: '',
+      title: '',
+      amountUsdc: 0,
+      description: '',
+      dodCriteria: [] as string[],
+      verifier: '',
     },
   ]);
 
-  // Compute terms hash whenever terms change
   useEffect(() => {
-    let active = true;
-    const compute = async () => {
-      const buffer = await hashAgreementTerms({ title, description, termsText });
-      if (active) setComputedTermsHash(uint8ArrayToHex(buffer));
-    };
-    compute();
-    return () => {
-      active = false;
-    };
-  }, [title, description, termsText]);
-
-  const criteriaSignature = JSON.stringify(milestones.map((m) => m.criteria));
-
-  // Compute DoD hashes for milestones
-  useEffect(() => {
-    let active = true;
-    const computeAll = async () => {
-      const parsed = JSON.parse(criteriaSignature) as string[][];
-      const hashes = await Promise.all(
-        parsed.map(async (crits) => {
-          const buffer = await hashDefinitionOfDone(crits.filter(Boolean));
-          return uint8ArrayToHex(buffer);
-        })
+    if (publicKeyString) {
+      setMilestones((prev) =>
+        prev.map((m) => ({
+          ...m,
+          verifier: m.verifier || publicKeyString,
+        }))
       );
-      if (active) {
-        setMilestones((prev) =>
-          prev.map((m, idx) => ({
-            ...m,
-            computedDodHash: hashes[idx] || '',
-          }))
-        );
-      }
-    };
-    computeAll();
-    return () => {
-      active = false;
-    };
-  }, [criteriaSignature]);
+    }
+  }, [publicKeyString]);
 
-  const addMilestone = () => {
+  const totalAmountUsdc = milestones.reduce((sum, m) => sum + m.amountUsdc, 0);
+
+  const handleAddMilestone = () => {
     setMilestones([
       ...milestones,
       {
-        title: `Milestone ${milestones.length}: New Deliverable`,
-        description: 'Provide deliverable description...',
-        amountUsdcString: '2500',
-        verificationType: VerificationType.SPONSOR,
-        criteria: ['Criterion 1 requirement', 'Criterion 2 validation'],
-        computedDodHash: '',
+        title: '',
+        amountUsdc: 0,
+        description: '',
+        dodCriteria: [],
+        verifier: publicKeyString || '',
       },
     ]);
   };
 
-  const removeMilestone = (index: number) => {
+  const handleRemoveMilestone = (idx: number) => {
     if (milestones.length <= 1) return;
-    setMilestones(milestones.filter((_, i) => i !== index));
+    setMilestones(milestones.filter((_, i) => i !== idx));
   };
 
-  const updateMilestone = (index: number, patch: Partial<MilestoneDraft>) => {
-    const next = [...milestones];
-    next[index] = { ...next[index], ...patch };
-    setMilestones(next);
+  const handleAddCriterion = (milestoneIdx: number) => {
+    const text = (newCriteriaInputs[milestoneIdx] || '').trim();
+    if (!text) return;
+    const updated = [...milestones];
+    updated[milestoneIdx].dodCriteria.push(text);
+    setMilestones(updated);
+    setNewCriteriaInputs((prev) => ({ ...prev, [milestoneIdx]: '' }));
   };
 
-  const addCriterion = (mIdx: number) => {
-    const next = [...milestones];
-    next[mIdx].criteria.push('');
-    setMilestones(next);
+  const handleRemoveCriterion = (milestoneIdx: number, critIdx: number) => {
+    const updated = [...milestones];
+    updated[milestoneIdx].dodCriteria = updated[milestoneIdx].dodCriteria.filter(
+      (_, i) => i !== critIdx
+    );
+    setMilestones(updated);
   };
 
-  const updateCriterion = (mIdx: number, cIdx: number, val: string) => {
-    const next = [...milestones];
-    next[mIdx].criteria[cIdx] = val;
-    setMilestones(next);
+  const handleLoadProgramTemplate = (milestoneIdx: number) => {
+    const updated = [...milestones];
+    updated[milestoneIdx].dodCriteria = [
+      'Target program exists on Solana cluster',
+      'Target account executable flag is true',
+      'Program owned by Upgradeable Loader',
+      'ProgramData PDA linkage is valid',
+    ];
+    setMilestones(updated);
   };
 
-  const removeCriterion = (mIdx: number, cIdx: number) => {
-    const next = [...milestones];
-    next[mIdx].criteria = next[mIdx].criteria.filter((_, i) => i !== cIdx);
-    setMilestones(next);
-  };
-
-  const totalBudgetUsdc = milestones.reduce((sum, m) => sum + (parseFloat(m.amountUsdcString) || 0), 0);
-
-  const handleCreateAgreement = async () => {
-    // Validate worker address
-    try {
-      new PublicKey(workerPubkey);
-    } catch {
-      alert('Invalid Solana Worker Public Key format');
+  const handleSubmit = async () => {
+    if (!connected || !publicKey) {
+      setError('Please connect your Solana wallet first.');
       return;
     }
 
-    const termsBuffer = await hashAgreementTerms({ title, description, termsText });
+    let workerPk: PublicKey;
+    try {
+      workerPk = new PublicKey(workerAddress.trim());
+    } catch {
+      setError('Invalid Worker Solana public key.');
+      return;
+    }
 
-    // Step 1: Create Agreement Account on-chain
-    const result = await execute(
+    let targetProgPk: PublicKey | undefined;
+    if (targetProgramId.trim()) {
+      try {
+        targetProgPk = new PublicKey(targetProgramId.trim());
+      } catch {
+        setError('Invalid target program public key.');
+        return;
+      }
+    }
+
+    await execute(
       'createAgreement',
-      `Initializing Agreement PDA with worker ${truncateAddress(workerPubkey, 4)} and ${milestones.length} milestones`,
+      `Deploying agreement escrow for ${formatUsdc(totalAmountUsdc)} USDC on Solana Devnet`,
       async () => {
-        const agRes = await protocolClient.createAgreement({
-          worker: new PublicKey(workerPubkey),
-          termsHash: termsBuffer,
-          milestoneCount: milestones.length,
+        let defHashBytes: number[];
+        if (targetProgPk) {
+          const rec = await prepareAccountVerificationRecipe(targetProgPk);
+          defHashBytes = rec.definitionHashBytes;
+        } else {
+          const allCriteria = milestones.flatMap((m) => m.dodCriteria);
+          if (allCriteria.length > 0) {
+            const h = await hashDoDCriteria(allCriteria);
+            defHashBytes = Array.from(h);
+          } else {
+            const th = await hashAgreementTerms({
+              title,
+              description,
+              termsText: termsText || 'Standard DONE Protocol escrow terms.',
+            });
+            defHashBytes = Array.from(th);
+          }
+        }
+
+        const agreementIdBn = new BN(Date.now());
+        const totalAmountBn = new BN(totalAmountUsdc);
+
+        const milestoneParams = milestones.map((m, idx) => {
+          let vPk: PublicKey;
+          try {
+            vPk = new PublicKey(m.verifier.trim() || publicKeyString);
+          } catch {
+            vPk = publicKey;
+          }
+
+          return {
+            index: idx,
+            amountRaw: new BN(m.amountUsdc),
+            definitionHash32: new Uint8Array(defHashBytes),
+            verifier: vPk,
+          };
+        });
+
+        const { signature, agreementPda } = await executeOnChainCreateAgreement(
+          publicKey,
+          workerPk,
+          agreementIdBn,
+          totalAmountBn,
+          new Uint8Array(defHashBytes),
+          milestoneParams,
+          { signTransaction }
+        );
+
+        saveOffchainMetadata({
+          agreementPda,
           title,
           description,
           termsText,
-        });
-
-        // Initialize each milestone account
-        for (let i = 0; i < milestones.length; i++) {
-          const m = milestones[i];
-          const dodBuffer = await hashDefinitionOfDone(m.criteria.filter(Boolean));
-          const rawAmount = parseUsdc(m.amountUsdcString);
-
-          await protocolClient.createMilestone({
-            agreement: agRes.agreementPda,
-            index: i,
-            amount: rawAmount,
-            dodHash: dodBuffer,
-            verificationType: m.verificationType,
+          createdAt: Date.now(),
+          milestones: milestones.map((m, idx) => ({
+            index: idx,
             title: m.title,
             description: m.description,
-            dodCriteria: m.criteria.filter(Boolean),
-          });
-        }
+            dodCriteria: m.dodCriteria,
+            verificationMethodLabel: targetProgPk ? 'Program Account Check' : 'Criteria Verification',
+          })),
+        });
 
-        return agRes;
+        setTimeout(() => {
+          router.push(`/agreements/${agreementPda}`);
+        }, 1000);
+
+        return { signature };
       }
     );
-
-    if (result) {
-      setTimeout(() => {
-        router.push(`/agreements/${result.agreementPda.toBase58()}`);
-      }, 1200);
-    }
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 space-y-8 font-mono">
-      <TxStateModal state={txState} isOpen={isOpen} onClose={reset} />
+    <div className="max-w-3xl mx-auto space-y-6 font-mono text-neutral-100">
+      <TxStateModal state={txState} isOpen={isTxOpen} onClose={resetTx} />
 
-      {/* Page Header */}
-      <div className="border-b border-zinc-800 pb-4">
-        <div className="flex items-center gap-2 text-xs text-zinc-400 mb-1">
-          <ShieldCheck className="w-4 h-4 text-cyan-400" />
-          <span>INITIALIZE ANCHOR AGREEMENT ACCOUNT</span>
-        </div>
-        <h1 className="text-xl sm:text-2xl font-bold text-zinc-100">
-          Agreement & Milestone Creation Wizard
-        </h1>
-        <p className="text-xs text-zinc-400 mt-1">
-          Establish deterministic terms and commit canonical SHA-256 Definition of Done requirements.
-        </p>
+      <div className="flex items-center justify-between">
+        <Link
+          href="/agreements"
+          className="inline-flex items-center gap-1.5 text-xs text-neutral-400 hover:text-white transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back to Agreements</span>
+        </Link>
+        <span className="text-xs text-neutral-500 uppercase tracking-widest font-semibold">
+          Step {step} of 2
+        </span>
       </div>
 
-      {/* Section 1: Agreement Terms & Parties */}
-      <Card>
-        <CardHeader className="bg-zinc-900/60">
-          <div className="flex items-center gap-2">
-            <span className="w-5 h-5 bg-cyan-950 border border-cyan-800 text-cyan-300 flex items-center justify-center text-xs font-bold">
-              1
-            </span>
-            <h3 className="font-bold text-sm text-zinc-100">Parties & Agreement Terms</h3>
-          </div>
-          <span className="text-[11px] text-zinc-400">STAGE 1</span>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Input
-            label="WORKER SOLANA PUBLIC KEY"
-            helperText="The worker keypair authorized to submit evidence and receive settled USDC."
-            value={workerPubkey}
-            onChange={(e) => setWorkerPubkey(e.target.value)}
-            required
-          />
+      <div className="flex items-center justify-between pb-2 border-b border-[#26262a]">
+        <div>
+          <h1 className="text-xl font-black text-white uppercase tracking-tight">
+            Create Escrow Agreement
+          </h1>
+          <p className="text-xs text-neutral-400 mt-0.5">
+            Non-custodial milestone-based escrow on Solana Devnet
+          </p>
+        </div>
+      </div>
 
+      {error && (
+        <div className="p-3 bg-rose-950/30 border border-rose-500/30 rounded-xl text-xs text-rose-300">
+          {error}
+        </div>
+      )}
+
+      {step === 1 ? (
+        <Card className="space-y-4">
           <Input
-            label="AGREEMENT TITLE"
+            label="Agreement Title *"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            required
+            placeholder="e.g. Protocol Core Audit or API Integration"
           />
 
           <Textarea
-            label="PROJECT SCOPE OVERVIEW"
-            rows={2}
+            label="Scope & Deliverables"
+            rows={3}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            required
+            placeholder="Describe deliverables and milestones..."
           />
 
-          <Textarea
-            label="TERMS & CONDITIONS (COMMITMENT SOURCE)"
-            rows={3}
-            value={termsText}
-            onChange={(e) => setTermsText(e.target.value)}
-            required
+          <Input
+            label="Target Program ID to Verify (Optional)"
+            value={targetProgramId}
+            onChange={(e) => setTargetProgramId(e.target.value)}
+            placeholder="Enter program public key, or leave blank for custom criteria..."
+            className="font-mono text-xs"
           />
 
-          {/* Canonical Terms Hash */}
-          <div className="p-3 bg-zinc-900 border border-zinc-800">
-            <div className="flex items-center gap-1.5 text-[10px] text-zinc-400 uppercase font-bold mb-1">
-              <Hash className="w-3 h-3 text-cyan-400" />
-              CANONICAL SHA-256 TERMS COMMITMENT:
+          <Input
+            label="Worker Solana Address *"
+            value={workerAddress}
+            onChange={(e) => setWorkerAddress(e.target.value)}
+            placeholder="Base58 Solana PublicKey (e.g. 7XqW...)"
+            className="font-mono text-xs"
+          />
+
+          {/* Milestones */}
+          <div className="space-y-3 pt-2 border-t border-[#26262a]">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase text-neutral-300">
+                Milestones ({milestones.length})
+              </span>
+              <button
+                type="button"
+                onClick={handleAddMilestone}
+                className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 font-semibold"
+              >
+                <Plus className="w-3 h-3" /> Add Milestone
+              </button>
             </div>
-            <div className="text-xs text-cyan-300 font-mono break-all">{computedTermsHash}</div>
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* Section 2: Milestones & Definition of Done */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="w-5 h-5 bg-cyan-950 border border-cyan-800 text-cyan-300 flex items-center justify-center text-xs font-bold">
-              2
-            </span>
-            <h3 className="font-bold text-sm text-zinc-100">
-              Definition of Done Milestones ({milestones.length})
-            </h3>
-          </div>
-          <Button variant="outline" size="sm" onClick={addMilestone}>
-            <PlusCircle className="w-3.5 h-3.5 mr-1 text-cyan-400" />
-            Add Milestone
-          </Button>
-        </div>
-
-        {milestones.map((m, mIdx) => (
-          <Card key={mIdx} className="border-zinc-800/80">
-            <CardHeader className="bg-zinc-900/40">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-cyan-400 px-2 py-0.5 bg-cyan-950 border border-cyan-800">
-                  MILESTONE #{mIdx}
-                </span>
-                <span className="text-xs font-semibold text-zinc-200 truncate">{m.title}</span>
-              </div>
-              {milestones.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => removeMilestone(mIdx)}
-                  className="text-zinc-500 hover:text-rose-400 text-xs inline-flex items-center gap-1"
-                >
-                  <Trash2 className="w-3.5 h-3.5" /> Remove
-                </button>
-              )}
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="sm:col-span-2">
-                  <Input
-                    label="MILESTONE TITLE"
-                    value={m.title}
-                    onChange={(e) => updateMilestone(mIdx, { title: e.target.value })}
-                    required
-                  />
-                </div>
-                <div>
-                  <Input
-                    label="ALLOCATION (USDC)"
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={m.amountUsdcString}
-                    onChange={(e) => updateMilestone(mIdx, { amountUsdcString: e.target.value })}
-                    required
-                  />
-                </div>
-              </div>
-
-              <Textarea
-                label="MILESTONE OBJECTIVE"
-                rows={2}
-                value={m.description}
-                onChange={(e) => updateMilestone(mIdx, { description: e.target.value })}
-                required
-              />
-
-              {/* Verification Type Select */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-300 uppercase tracking-wide">
-                  VERIFICATION METHOD
-                </label>
-                <select
-                  value={m.verificationType}
-                  onChange={(e) =>
-                    updateMilestone(mIdx, { verificationType: Number(e.target.value) })
-                  }
-                  className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-zinc-100 rounded-none focus:outline-none focus:border-cyan-400"
-                >
-                  <option value={VerificationType.SPONSOR}>Sponsor Direct Sign-off</option>
-                  <option value={VerificationType.ON_CHAIN_ORACLE}>
-                    On-Chain Oracle / Keeper
-                  </option>
-                  <option value={VerificationType.ATTESTATION}>
-                    Cryptographic Attestation (EAS / Solana precompile)
-                  </option>
-                </select>
-              </div>
-
-              {/* Definition of Done Criteria */}
-              <div className="space-y-2 pt-2 border-t border-zinc-800">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-semibold text-zinc-300 uppercase tracking-wide">
-                    DEFINITION OF DONE (DoD) CRITERIA ({m.criteria.length})
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => addCriterion(mIdx)}
-                    className="text-[11px] text-cyan-400 hover:text-cyan-300 inline-flex items-center gap-1"
-                  >
-                    <PlusCircle className="w-3 h-3" /> Add Criterion
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  {m.criteria.map((crit, cIdx) => (
-                    <div key={cIdx} className="flex gap-2 items-center">
-                      <span className="text-xs font-bold text-zinc-500 w-5">[{cIdx + 1}]</span>
-                      <Input
-                        value={crit}
-                        onChange={(e) => updateCriterion(mIdx, cIdx, e.target.value)}
-                        placeholder="Specific, testable completion requirement..."
+            <div className="space-y-2">
+              {milestones.map((m, idx) => (
+                <div key={idx} className="p-3 bg-[#000000] border border-[#26262a] rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-violet-400">#{idx + 1}</span>
+                    <input
+                      type="text"
+                      value={m.title}
+                      onChange={(e) => {
+                        const updated = [...milestones];
+                        updated[idx].title = e.target.value;
+                        setMilestones(updated);
+                      }}
+                      placeholder="Milestone title..."
+                      className="flex-1 bg-transparent border-b border-[#26262a] focus:border-violet-500 text-xs text-white pb-0.5 outline-none"
+                    />
+                    <div className="flex items-center gap-1 text-xs">
+                      <span className="text-neutral-500">$</span>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={m.amountUsdc ? m.amountUsdc / 1e6 : ''}
+                        onChange={(e) => {
+                          const updated = [...milestones];
+                          const val = parseFloat(e.target.value) || 0;
+                          updated[idx].amountUsdc = Math.round(val * 1e6);
+                          setMilestones(updated);
+                        }}
+                        placeholder="0.00"
+                        className="w-24 bg-[#000000] border border-[#26262a] rounded px-1.5 py-0.5 text-right font-semibold text-white text-xs outline-none"
                       />
-                      {m.criteria.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeCriterion(mIdx, cIdx)}
-                          className="p-1.5 text-zinc-500 hover:text-rose-400"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                      <span className="text-neutral-500 text-[10px]">USDC</span>
                     </div>
-                  ))}
-                </div>
-              </div>
+                    {milestones.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveMilestone(idx)}
+                        className="p-1 text-neutral-500 hover:text-rose-400 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
 
-              {/* Computed DoD Hash */}
-              <div className="p-3 bg-zinc-900 border border-zinc-800 text-xs">
-                <div className="flex items-center gap-1.5 text-[10px] text-zinc-400 uppercase font-bold mb-0.5">
-                  <Hash className="w-3 h-3 text-cyan-400" />
-                  CANONICAL DoD SHA-256 HASH (NORMALIZED & SORTED):
-                </div>
-                <div className="text-[11px] text-amber-300 font-mono break-all">
-                  {m.computedDodHash || 'Hashing...'}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                  <div className="pt-1">
+                    <label className="text-[10px] text-neutral-400 block mb-1">
+                      Assigned Verifier Public Key:
+                    </label>
+                    <input
+                      type="text"
+                      value={m.verifier}
+                      onChange={(e) => {
+                        const updated = [...milestones];
+                        updated[idx].verifier = e.target.value;
+                        setMilestones(updated);
+                      }}
+                      placeholder={publicKeyString || 'Verifier Solana PublicKey'}
+                      className="w-full bg-[#000000] border border-[#26262a] rounded px-2 py-1 text-[11px] font-mono text-neutral-200 outline-none focus:border-violet-500"
+                    />
+                  </div>
 
-      {/* Summary and Submit Bar */}
-      <div className="p-5 bg-zinc-950 border border-cyan-500/50 shadow-[0_0_20px_rgba(6,182,212,0.1)] flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div>
-          <span className="text-zinc-400 text-xs uppercase block">TOTAL ESCROW BUDGET</span>
-          <div className="text-xl sm:text-2xl font-bold text-emerald-400">
-            ${totalBudgetUsdc.toLocaleString()} USDC
+                  {/* DoD Criteria */}
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] uppercase font-bold text-neutral-400">
+                        DoD Criteria ({m.dodCriteria.length})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleLoadProgramTemplate(idx)}
+                        className="text-[10px] text-violet-400 hover:text-violet-300"
+                      >
+                        + Load Program Template
+                      </button>
+                    </div>
+
+                    {m.dodCriteria.length > 0 && (
+                      <div className="space-y-1">
+                        {m.dodCriteria.map((c, cIdx) => (
+                          <div
+                            key={cIdx}
+                            className="flex items-center justify-between p-1.5 bg-neutral-950 border border-[#26262a] rounded text-[11px]"
+                          >
+                            <span className="text-neutral-300 truncate">
+                              {cIdx + 1}. {c}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveCriterion(idx, cIdx)}
+                              className="text-neutral-500 hover:text-rose-400 p-0.5"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex gap-1.5 pt-0.5">
+                      <input
+                        type="text"
+                        value={newCriteriaInputs[idx] || ''}
+                        onChange={(e) =>
+                          setNewCriteriaInputs((prev) => ({
+                            ...prev,
+                            [idx]: e.target.value,
+                          }))
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddCriterion(idx);
+                          }
+                        }}
+                        placeholder="Add specific criterion..."
+                        className="flex-1 bg-[#000000] border border-[#26262a] rounded px-2 py-1 text-[11px] text-white outline-none focus:border-violet-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleAddCriterion(idx)}
+                        className="px-2.5 py-1 bg-violet-600/30 hover:bg-violet-600/50 text-violet-300 border border-violet-500/40 rounded text-[11px]"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-between items-center p-3 rounded-xl bg-violet-950/20 border border-violet-500/30 text-xs">
+              <span className="text-neutral-300">Total Escrow Budget:</span>
+              <span className="text-sm font-bold text-violet-300">
+                ${formatUsdc(totalAmountUsdc)} USDC
+              </span>
+            </div>
           </div>
-          <span className="text-[11px] text-zinc-400">
-            {milestones.length} Milestones committed to Solana Devnet
-          </span>
-        </div>
 
-        <div className="flex items-center gap-3">
-          <Button variant="outline" size="md" onClick={() => router.push('/')}>
-            Cancel
-          </Button>
-          <Button variant="primary" size="md" onClick={handleCreateAgreement}>
-            <Coins className="w-4 h-4 mr-1.5 text-black" />
-            Initialize On-Chain Agreement
-            <ArrowRight className="w-4 h-4 ml-1.5 text-black" />
-          </Button>
-        </div>
-      </div>
+          <div className="pt-2 flex justify-end">
+            <Button
+              variant="primary"
+              onClick={() => {
+                if (!title.trim()) {
+                  setError('Please specify agreement title.');
+                  return;
+                }
+                if (!workerAddress.trim()) {
+                  setError('Please provide worker address.');
+                  return;
+                }
+                if (totalAmountUsdc <= 0) {
+                  setError('Total milestone amount must be greater than 0.');
+                  return;
+                }
+                setError(null);
+                setStep(2);
+              }}
+              className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500"
+            >
+              Review Escrow <ArrowRight className="w-4 h-4" />
+            </Button>
+          </div>
+        </Card>
+      ) : (
+        /* Step 2: Confirm */
+        <Card className="space-y-5 text-xs">
+          <div className="flex flex-col items-center justify-center p-6 rounded-2xl bg-[#000000] border border-[#26262a] text-center space-y-2">
+            <DoneLogo className="w-12 h-12" />
+            <h3 className="text-base font-bold text-white">{title}</h3>
+            <div className="text-2xl font-black text-violet-400">${formatUsdc(totalAmountUsdc)} USDC</div>
+            <span className="text-[10px] text-neutral-400 uppercase tracking-widest">{milestones.length} Milestones</span>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex justify-between p-3 rounded-xl bg-[#000000] border border-[#26262a]">
+              <span className="text-neutral-400">Sponsor:</span>
+              <span className="text-violet-300 font-mono text-[11px]">
+                {publicKeyString ? `${publicKeyString.slice(0, 10)}...` : 'Connected Wallet'}
+              </span>
+            </div>
+            <div className="flex justify-between p-3 rounded-xl bg-[#000000] border border-[#26262a]">
+              <span className="text-neutral-400">Worker:</span>
+              <span className="text-violet-300 font-mono text-[11px]">
+                {workerAddress ? `${workerAddress.slice(0, 10)}...` : ''}
+              </span>
+            </div>
+            <div className="flex justify-between p-3 rounded-xl bg-[#000000] border border-[#26262a]">
+              <span className="text-neutral-400">Security:</span>
+              <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                <Lock className="w-3.5 h-3.5" /> Non-Custodial Vault PDA
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-3 border-t border-[#26262a]">
+            <Button variant="outline" onClick={() => setStep(1)}>
+              Back
+            </Button>
+            <Button variant="primary" onClick={handleSubmit} className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 font-bold">
+              <ShieldCheck className="w-4 h-4" /> Authorize & Deploy Escrow
+            </Button>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

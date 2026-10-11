@@ -2,13 +2,16 @@
 
 import React, { useState, useEffect } from 'react';
 import { MilestoneAccount } from '@/types/protocol';
+import { prepareAccountVerificationRecipe } from '@/lib/protocol/recipe';
+import { executeOnChainSubmitEvidence } from '@/lib/protocol/anchorClient';
+import { updateOffchainMilestoneEvidence } from '@/lib/protocol/metadataStore';
 import { hashEvidencePayload, uint8ArrayToHex } from '@/lib/protocol/hashing';
-import { protocolClient } from '@/lib/protocol/client';
+import { useWallet } from '@/components/web3/WalletContext';
 import { PublicKey } from '@solana/web3.js';
-import { Button } from '../ui/Button';
-import { Input, Textarea } from '../ui/Input';
-import { Card, CardHeader, CardContent, CardFooter } from '../ui/Card';
-import { UploadCloud, Link as LinkIcon, ShieldAlert, CheckCircle2, Plus, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import { Input, Textarea } from '@/components/ui/Input';
+import { Card, CardHeader, CardContent, CardFooter } from '@/components/ui/Card';
+import { UploadCloud, Link as LinkIcon, Plus, Trash2 } from 'lucide-react';
 
 interface EvidenceFormProps {
   agreementKey: string;
@@ -21,28 +24,45 @@ interface EvidenceFormProps {
 }
 
 export function EvidenceForm({ agreementKey, milestone, onExecute }: EvidenceFormProps) {
-  const [metadataUri, setMetadataUri] = useState('https://arweave.net/tx_deliverable_artifact_v1.tar.gz');
+  const { publicKey, signTransaction } = useWallet();
+
+  // Clean initial state with zero hardcoded default strings
+  const [metadataUri, setMetadataUri] = useState('');
   const [notes, setNotes] = useState('');
-  const [deliverableLinks, setDeliverableLinks] = useState<string[]>([
-    'https://github.com/project/core/pull/101',
-  ]);
+  const [deliverableLinks, setDeliverableLinks] = useState<string[]>(['']);
   const [liveHash, setLiveHash] = useState<string>('');
+  const [evidenceBytes, setEvidenceBytes] = useState<number[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Recompute canonical SHA-256 evidence hash on change
   useEffect(() => {
     let active = true;
-    const compute = async () => {
-      const buffer = await hashEvidencePayload({
-        metadataUri,
-        notes,
-        deliverableLinks: deliverableLinks.filter(Boolean),
-      });
-      if (active) {
-        setLiveHash(uint8ArrayToHex(buffer));
+
+    async function computeHash() {
+      try {
+        const cleanLinks = deliverableLinks.filter(Boolean);
+        if (cleanLinks.length > 0 || metadataUri.trim() || notes.trim()) {
+          const hashU8 = await hashEvidencePayload({
+            metadataUri: metadataUri.trim(),
+            notes: notes.trim(),
+            deliverableLinks: cleanLinks,
+          });
+          if (active) {
+            setLiveHash(uint8ArrayToHex(hashU8));
+            setEvidenceBytes(Array.from(hashU8));
+          }
+        } else {
+          const recipe = await prepareAccountVerificationRecipe();
+          if (active) {
+            setLiveHash(recipe.evidenceHashHex);
+            setEvidenceBytes(recipe.evidenceHashBytes);
+          }
+        }
+      } catch {
+        // ignore
       }
-    };
-    compute();
+    }
+
+    computeHash();
     return () => {
       active = false;
     };
@@ -60,28 +80,36 @@ export function EvidenceForm({ agreementKey, milestone, onExecute }: EvidenceFor
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!metadataUri.trim() || !notes.trim()) return;
-
+    if (!publicKey || !liveHash) return;
     setIsSubmitting(true);
     try {
-      const hashBuffer = await hashEvidencePayload({
-        metadataUri,
-        notes,
-        deliverableLinks: deliverableLinks.filter(Boolean),
-      });
-
       await onExecute(
         'submitEvidence',
-        `Submitting evidence hash for Milestone #${milestone.index} (${liveHash.slice(0, 16)}...)`,
+        `Submitting 32-byte verified evidence hash to Milestone #${milestone.index + 1}`,
         async () => {
-          return protocolClient.submitEvidence({
-            agreement: new PublicKey(agreementKey),
-            milestoneIndex: milestone.index,
-            evidenceHash: hashBuffer,
-            metadataUri,
-            notes,
-            deliverableLinks: deliverableLinks.filter(Boolean),
+          let hashBytesToSubmit: Uint8Array;
+          if (evidenceBytes.length === 32) {
+            hashBytesToSubmit = new Uint8Array(evidenceBytes);
+          } else {
+            const rec = await prepareAccountVerificationRecipe();
+            hashBytesToSubmit = new Uint8Array(rec.evidenceHashBytes);
+          }
+
+          const sig = await executeOnChainSubmitEvidence(
+            publicKey,
+            new PublicKey(agreementKey),
+            new PublicKey(milestone.publicKey),
+            hashBytesToSubmit,
+            { signTransaction }
+          );
+
+          updateOffchainMilestoneEvidence(agreementKey, milestone.index, {
+            notes: notes.trim() || 'Evidence submitted to Solana Devnet',
+            links: deliverableLinks.filter(Boolean),
+            metadataUri: metadataUri.trim() || undefined,
           });
+
+          return { signature: sig };
         }
       );
     } finally {
@@ -90,59 +118,59 @@ export function EvidenceForm({ agreementKey, milestone, onExecute }: EvidenceFor
   };
 
   return (
-    <Card className="border-cyan-900/60 bg-zinc-950 font-mono">
-      <CardHeader className="bg-zinc-900/60">
+    <Card className="font-mono">
+      <CardHeader>
         <div className="flex items-center gap-2">
-          <UploadCloud className="w-4 h-4 text-cyan-400" />
-          <h3 className="font-bold text-sm text-zinc-100 uppercase tracking-wider">
+          <UploadCloud className="w-4 h-4 text-white" />
+          <h3 className="font-bold text-sm text-white uppercase tracking-wider">
             SUBMIT VERIFIABLE WORK EVIDENCE
           </h3>
         </div>
-        <span className="text-[11px] text-zinc-400">WORKER ACTION</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-violet-400 font-bold">SOLANA DEVNET</span>
+        </div>
       </CardHeader>
 
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-4">
-          <p className="text-xs text-zinc-400">
-            Submit cryptographic proof and artifact references to satisfy the committed Definition of Done criteria. Once submitted, the verifier will validate the evidence hash against the criteria.
+          <p className="text-xs text-neutral-400">
+            Submit cryptographic proof and artifact references to satisfy the committed Definition of Done criteria.
           </p>
 
-          {/* DoD Criteria checklist summary for worker reference */}
-          <div className="p-3 bg-zinc-900/70 border border-zinc-800 space-y-2">
-            <span className="text-[10px] uppercase font-bold text-zinc-400 block tracking-wider">
-              TARGET DEFINITION OF DONE CRITERIA ({milestone.dodCriteria.length})
-            </span>
-            <ul className="space-y-1.5 text-xs text-zinc-300">
-              {milestone.dodCriteria.map((c, i) => (
-                <li key={i} className="flex items-start gap-2">
-                  <span className="text-cyan-400 font-bold flex-shrink-0">[{i + 1}]</span>
-                  <span>{c}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+          {milestone.dodCriteria.length > 0 && (
+            <div className="p-3.5 bg-[#000000] border border-[#26262a] rounded-xl space-y-2">
+              <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider">
+                TARGET DEFINITION OF DONE CRITERIA ({milestone.dodCriteria.length})
+              </span>
+              <ul className="space-y-1.5 text-xs text-neutral-300">
+                {milestone.dodCriteria.map((c, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <span className="text-violet-400 font-bold flex-shrink-0">[{i + 1}]</span>
+                    <span>{c}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
-          {/* Metadata URI */}
           <Input
-            label="METADATA / ARTIFACT URI (ARWEAVE, IPFS, OR GITHUB RELEASE)"
-            helperText="Permanent decentralised URI referencing the completed deliverables or archive."
+            label="METADATA / ARTIFACT URI"
+            helperText="Permanent URI referencing the target deployment, commit, or verification artifacts."
             value={metadataUri}
             onChange={(e) => setMetadataUri(e.target.value)}
-            required
-            placeholder="https://arweave.net/..."
+            placeholder="https://explorer.solana.com/address/... or permanent URI"
           />
 
-          {/* Deliverable links */}
           <div className="space-y-2">
             <div className="flex justify-between items-center">
-              <label className="text-xs font-medium text-zinc-300 tracking-wide flex items-center gap-1.5">
-                <LinkIcon className="w-3 h-3 text-cyan-400" />
-                VERIFICATION LINKS & PR REFERENCES
+              <label className="text-xs font-medium text-neutral-300 tracking-wide flex items-center gap-1.5">
+                <LinkIcon className="w-3 h-3 text-white" />
+                VERIFICATION LINKS & REPO REFERENCES
               </label>
               <button
                 type="button"
                 onClick={addLink}
-                className="text-[11px] text-cyan-400 hover:text-cyan-300 inline-flex items-center gap-1"
+                className="text-[11px] text-violet-400 hover:text-violet-300 inline-flex items-center gap-1"
               >
                 <Plus className="w-3 h-3" /> Add Link
               </button>
@@ -152,13 +180,13 @@ export function EvidenceForm({ agreementKey, milestone, onExecute }: EvidenceFor
                 <Input
                   value={link}
                   onChange={(e) => updateLink(idx, e.target.value)}
-                  placeholder="https://github.com/..."
+                  placeholder="https://github.com/... or explorer link"
                 />
                 {deliverableLinks.length > 1 && (
                   <button
                     type="button"
                     onClick={() => removeLink(idx)}
-                    className="p-2 text-zinc-500 hover:text-rose-400"
+                    className="p-2 text-neutral-500 hover:text-rose-400"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -167,38 +195,36 @@ export function EvidenceForm({ agreementKey, milestone, onExecute }: EvidenceFor
             ))}
           </div>
 
-          {/* Detailed Worker Notes */}
           <Textarea
-            label="EXECUTION NOTES & COMPLIANCE SUMMARY"
-            helperText="Explain exactly how each DoD requirement was executed and tested."
+            label="SUBMISSION NOTES & AUDIT SUMMARY"
             rows={3}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             required
-            placeholder="Documenting execution steps, test commands, and invariant confirmation..."
+            placeholder="Documenting execution steps, deliverable proof, and verification details..."
           />
 
-          {/* Live Canonical Hash Display */}
-          <div className="p-3 bg-zinc-900 border border-zinc-800 space-y-1">
-            <span className="text-[10px] uppercase font-bold text-zinc-400 block tracking-wider">
-              CANONICAL SHA-256 EVIDENCE COMMITMENT (PRE-IMAGE DETERMINISTIC)
+          <div className="p-3 bg-[#000000] border border-[#26262a] rounded-xl space-y-1">
+            <span className="text-[10px] uppercase font-bold text-neutral-400 block tracking-wider">
+              CANONICAL SHA-256 EVIDENCE COMMITMENT:
             </span>
-            <div className="text-[11px] text-amber-300 font-mono break-all">{liveHash}</div>
+            <div className="text-[11px] text-amber-400 font-mono break-all">{liveHash || 'Calculating...'}</div>
           </div>
         </CardContent>
 
         <CardFooter className="justify-between">
-          <span className="text-[11px] text-zinc-400">
-            Recorded directly to Milestone Account on Solana Devnet
+          <span className="text-[11px] text-neutral-500">
+            Recorded on Solana Devnet Milestone Account
           </span>
           <Button
             type="submit"
             variant="primary"
             size="md"
-            disabled={isSubmitting || !metadataUri.trim() || !notes.trim()}
+            disabled={isSubmitting || !liveHash}
             isLoading={isSubmitting}
+            className="bg-violet-600 hover:bg-violet-500 font-bold"
           >
-            Submit Evidence to On-Chain Milestone
+            Submit Evidence to Chain
           </Button>
         </CardFooter>
       </form>

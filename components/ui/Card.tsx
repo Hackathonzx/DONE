@@ -3,18 +3,16 @@ import React from 'react';
 export function Card({
   children,
   className = '',
-  highlight = false,
+  elevated = false,
 }: {
   children: React.ReactNode;
   className?: string;
-  highlight?: boolean;
+  elevated?: boolean;
 }) {
   return (
     <div
-      className={`border rounded-none bg-zinc-950/70 backdrop-blur-sm ${
-        highlight
-          ? 'border-cyan-500/40 shadow-[0_0_20px_rgba(6,182,212,0.06)]'
-          : 'border-zinc-800/80 hover:border-zinc-700/80 transition-colors'
+      className={`bg-[#000000] border border-[#26262a] ${
+        elevated ? 'p-4 rounded-xl shadow-lg' : 'p-5 rounded-2xl'
       } ${className}`}
     >
       {children}
@@ -30,7 +28,7 @@ export function CardHeader({
   className?: string;
 }) {
   return (
-    <div className={`p-4 sm:p-5 border-b border-zinc-800/80 flex items-center justify-between ${className}`}>
+    <div className={`pb-4 border-b border-[#26262a] flex items-center justify-between ${className}`}>
       {children}
     </div>
   );
@@ -43,7 +41,7 @@ export function CardContent({
   children: React.ReactNode;
   className?: string;
 }) {
-  return <div className={`p-4 sm:p-5 ${className}`}>{children}</div>;
+  return <div className={`pt-4 ${className}`}>{children}</div>;
 }
 
 export function CardFooter({
@@ -54,7 +52,7 @@ export function CardFooter({
   className?: string;
 }) {
   return (
-    <div className={`p-4 sm:p-5 border-t border-zinc-800/80 bg-zinc-900/40 flex items-center justify-between ${className}`}>
+    <div className={`pt-4 border-t border-[#26262a] flex items-center justify-between ${className}`}>
       {children}
     </div>
   );

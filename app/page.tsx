@@ -3,353 +3,485 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useAgreements } from '@/hooks/useAgreement';
-import { AgreementState, MilestoneState } from '@/types/protocol';
+import { useWallet } from '@/components/web3/WalletContext';
+import { useTransactionExecution } from '@/hooks/useTransactionExecution';
+import { AgreementState, MilestoneState, AgreementAccount, MilestoneAccount } from '@/types/protocol';
 import { formatUsdc, truncateAddress } from '@/lib/solana';
 import { AgreementStateBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Card, CardContent } from '@/components/ui/Card';
-import { protocolClient } from '@/lib/protocol/client';
-import { useQueryClient } from '@tanstack/react-query';
+import { CreateAgreementDrawer } from '@/components/protocol/CreateAgreementDrawer';
+import { QuickActionModal, QuickActionType } from '@/components/protocol/QuickActionModal';
+import { TxStateModal } from '@/components/web3/TxStateModal';
 import {
   ShieldCheck,
-  PlusCircle,
-  ArrowRight,
-  Lock,
-  FileCheck,
   Coins,
-  RefreshCw,
-  ExternalLink,
-  ChevronRight,
-  Database,
-  Terminal,
+  UploadCloud,
+  FileCode,
+  ArrowRight,
+  PlusCircle,
+  FileCheck2,
+  Lock,
 } from 'lucide-react';
 
-export default function HomePage() {
+export default function ProtocolOverviewPage() {
   const { data: agreements = [], isLoading } = useAgreements();
-  const queryClient = useQueryClient();
-  const [filter, setFilter] = useState<string>('ALL');
-  const [isResetting, setIsResetting] = useState(false);
+  const { connected, publicKeyString } = useWallet();
+  const { txState, execute, reset: resetTx, isOpen: isTxOpen } = useTransactionExecution();
 
-  const filtered = agreements.filter((a) => {
-    if (filter === 'ALL') return true;
-    return a.state === filter;
+  const [activeTab, setActiveTab] = useState<'my' | 'all' | 'active' | 'completed'>('my');
+  const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
+  const [drawerState, setDrawerState] = useState<{
+    isOpen: boolean;
+    type: QuickActionType;
+    agreement: AgreementAccount | null;
+    milestone?: MilestoneAccount;
+  }>({
+    isOpen: false,
+    type: 'inspect',
+    agreement: null,
   });
 
-  // Calculate Protocol Metrics
-  const totalCommittedUsdc = agreements.reduce((acc, a) => acc + a.totalAmountUsdc, 0);
-  const totalSettledUsdc = agreements.reduce((acc, a) => {
-    return (
-      acc +
-      a.milestones
-        .filter((m) => m.state === MilestoneState.RELEASED)
-        .reduce((sum, m) => sum + m.amountUsdc, 0)
-    );
-  }, 0);
-  const activeCount = agreements.filter(
-    (a) => a.state === AgreementState.ACTIVE || a.state === AgreementState.FUNDED
-  ).length;
-
-  const handleResetSeed = async () => {
-    setIsResetting(true);
-    protocolClient.resetToDefaultSeed();
-    await queryClient.invalidateQueries();
-    setTimeout(() => setIsResetting(false), 500);
+  const openDrawer = (
+    type: QuickActionType,
+    agreement: AgreementAccount,
+    milestone?: MilestoneAccount
+  ) => {
+    setDrawerState({
+      isOpen: true,
+      type,
+      agreement,
+      milestone,
+    });
   };
 
+  const closeDrawer = () => {
+    setDrawerState((prev) => ({ ...prev, isOpen: false }));
+  };
+
+  // Metrics across real on-chain agreements
+  const totalValueLockedUsdc = agreements.reduce((sum, a) => {
+    const released = a.milestones
+      .filter((m) => m.state === MilestoneState.RELEASED)
+      .reduce((s, m) => s + m.amountUsdc, 0);
+    return sum + (a.state !== AgreementState.DRAFT && a.state !== AgreementState.CANCELLED ? a.totalAmountUsdc - released : 0);
+  }, 0);
+
+  const totalSettledUsdc = agreements.reduce((sum, a) => {
+    return (
+      sum +
+      a.milestones
+        .filter((m) => m.state === MilestoneState.RELEASED)
+        .reduce((s, m) => s + m.amountUsdc, 0)
+    );
+  }, 0);
+
+  const allMilestones = agreements.flatMap((a) => a.milestones);
+  const totalMilestonesCount = allMilestones.length;
+
+  const filteredAgreements = agreements.filter((agreement) => {
+    if (activeTab === 'my') {
+      if (!publicKeyString) return true;
+      return agreement.sponsor === publicKeyString || agreement.worker === publicKeyString;
+    }
+    if (activeTab === 'all') return true;
+    if (activeTab === 'active') return agreement.state === AgreementState.ACTIVE || agreement.state === AgreementState.FUNDED;
+    if (activeTab === 'completed') return agreement.state === AgreementState.COMPLETED;
+    return true;
+  });
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-10">
+    <div className="space-y-8 font-mono text-neutral-100 max-w-6xl mx-auto">
+      <CreateAgreementDrawer
+        isOpen={isCreateDrawerOpen}
+        onClose={() => setIsCreateDrawerOpen(false)}
+        onSuccess={() => {}}
+      />
+      <TxStateModal state={txState} isOpen={isTxOpen} onClose={resetTx} />
+
+      {drawerState.agreement && (
+        <QuickActionModal
+          isOpen={drawerState.isOpen}
+          onClose={closeDrawer}
+          actionType={drawerState.type}
+          agreement={drawerState.agreement}
+          milestone={drawerState.milestone}
+          onExecute={execute}
+        />
+      )}
+
       {/* Hero Section */}
-      <div className="border border-zinc-800 bg-zinc-950/80 p-6 sm:p-10 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl -z-10 pointer-events-none" />
-        <div className="max-w-3xl space-y-4">
-          <div className="inline-flex items-center gap-2 px-2.5 py-1 bg-cyan-950/70 border border-cyan-800 text-[11px] text-cyan-300 font-mono">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-            SOLANA ANCHOR DEVNET RUNTIME
+      <div className="relative overflow-hidden rounded-3xl bg-[#000000] border border-[#26262a] p-6 sm:p-8">
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-3 max-w-2xl">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-500/10 border border-violet-500/30 text-violet-300 text-xs font-semibold">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Program ID: 82MC...ZXYM (Solana Devnet)</span>
+            </div>
+
+            <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
+              Programmable Settlement for Verifiable Work
+            </h1>
+
+            <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed">
+              Non-custodial USDC-funded milestones on Solana. Verified Definition of Done commitments,
+              designated on-chain attestations, and deterministic escrow payouts.
+            </p>
+
+            <div className="flex flex-wrap items-center gap-3 pt-2">
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => setIsCreateDrawerOpen(true)}
+                className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 font-bold"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>Create Escrow Agreement</span>
+              </Button>
+
+              <Link
+                href="/agreements"
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#000000] hover:bg-neutral-900 border border-[#26262a] text-neutral-300 text-xs font-semibold transition-colors"
+              >
+                <span>Directory</span>
+                <ArrowRight className="w-3.5 h-3.5 text-neutral-400" />
+              </Link>
+            </div>
           </div>
 
-          <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight text-zinc-100 font-mono">
-            Programmable Settlement for Verifiable Work
-          </h1>
-
-          <p className="text-zinc-400 text-xs sm:text-sm leading-relaxed font-mono">
-            DONE Protocol eliminates subjective escrow releases on Solana. Work is bound to a canonical Definition of Done (DoD) hash, verified against cryptographic evidence, and settled via deterministic SPL USDC transfers.
-          </p>
-
-          <div className="pt-2 flex flex-wrap items-center gap-3">
-            <Link href="/agreements/new">
-              <Button variant="primary" size="md">
-                <PlusCircle className="w-4 h-4 mr-1.5 text-black" />
-                Initialize Agreement
-              </Button>
-            </Link>
-            <Link href="/sponsor">
-              <Button variant="outline" size="md">
-                Sponsor Dashboard
-              </Button>
-            </Link>
-            <Link href="/worker">
-              <Button variant="secondary" size="md">
-                Worker Dashboard
-              </Button>
-            </Link>
-          </div>
-        </div>
-
-        {/* 4-Stage Protocol Pipeline Banner */}
-        <div className="mt-8 pt-6 border-t border-zinc-800/80">
-          <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-widest block mb-3">
-            DETERMINISTIC EXECUTION PIPELINE
-          </span>
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs font-mono">
-            <div className="p-3 bg-zinc-900/60 border border-zinc-800 flex items-start gap-3">
-              <div className="w-6 h-6 rounded-none bg-zinc-800 flex items-center justify-center font-bold text-zinc-300 flex-shrink-0">
-                1
+          {/* Quick Metrics Badge */}
+          <div className="grid grid-cols-2 gap-3 min-w-[280px]">
+            <div className="p-4 rounded-2xl bg-neutral-950/60 border border-[#26262a]">
+              <span className="text-[10px] uppercase font-semibold text-neutral-400 block mb-1">
+                Active TVL
+              </span>
+              <div className="text-xl font-black text-violet-400">
+                ${formatUsdc(totalValueLockedUsdc)}
               </div>
-              <div>
-                <p className="font-bold text-zinc-200">Definition of Done (DoD)</p>
-                <p className="text-[11px] text-zinc-400 mt-0.5">
-                  Canonical SHA-256 criteria committed to Agreement PDA.
-                </p>
-              </div>
+              <span className="text-[10px] text-neutral-400">Devnet USDC</span>
             </div>
 
-            <div className="p-3 bg-zinc-900/60 border border-zinc-800 flex items-start gap-3">
-              <div className="w-6 h-6 rounded-none bg-zinc-800 flex items-center justify-center font-bold text-zinc-300 flex-shrink-0">
-                2
+            <div className="p-4 rounded-2xl bg-neutral-950/60 border border-[#26262a]">
+              <span className="text-[10px] uppercase font-semibold text-neutral-400 block mb-1">
+                Settled Payouts
+              </span>
+              <div className="text-xl font-black text-emerald-400">
+                ${formatUsdc(totalSettledUsdc)}
               </div>
-              <div>
-                <p className="font-bold text-zinc-200">Evidence Submission</p>
-                <p className="text-[11px] text-zinc-400 mt-0.5">
-                  Worker logs pre-image hashes and permanent Arweave URIs.
-                </p>
-              </div>
+              <span className="text-[10px] text-neutral-400">Released to Workers</span>
             </div>
 
-            <div className="p-3 bg-zinc-900/60 border border-zinc-800 flex items-start gap-3">
-              <div className="w-6 h-6 rounded-none bg-zinc-800 flex items-center justify-center font-bold text-zinc-300 flex-shrink-0">
-                3
+            <div className="p-4 rounded-2xl bg-neutral-950/60 border border-[#26262a]">
+              <span className="text-[10px] uppercase font-semibold text-neutral-400 block mb-1">
+                Total Milestones
+              </span>
+              <div className="text-xl font-black text-white">
+                {totalMilestonesCount}
               </div>
-              <div>
-                <p className="font-bold text-zinc-200">Verification Audit</p>
-                <p className="text-[11px] text-zinc-400 mt-0.5">
-                  Sponsor or Oracle validates artifacts against criteria.
-                </p>
-              </div>
+              <span className="text-[10px] text-neutral-400">On-Chain Accounts</span>
             </div>
 
-            <div className="p-3 bg-zinc-900/60 border border-zinc-800 flex items-start gap-3">
-              <div className="w-6 h-6 rounded-none bg-cyan-950 border border-cyan-800 flex items-center justify-center font-bold text-cyan-300 flex-shrink-0">
-                4
+            <div className="p-4 rounded-2xl bg-neutral-950/60 border border-[#26262a]">
+              <span className="text-[10px] uppercase font-semibold text-neutral-400 block mb-1">
+                Network State
+              </span>
+              <div className="text-sm font-bold text-emerald-400 flex items-center gap-1.5 mt-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                Devnet Live
               </div>
-              <div>
-                <p className="font-bold text-cyan-300">Deterministic Settlement</p>
-                <p className="text-[11px] text-zinc-400 mt-0.5">
-                  Vault PDA executes USDC transfer to Worker ATA.
-                </p>
-              </div>
+              <span className="text-[10px] text-neutral-400">Confirmed RPC</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Protocol Metrics Bar */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 font-mono">
-        <div className="p-4 bg-zinc-950 border border-zinc-800">
-          <span className="text-[10px] text-zinc-400 uppercase tracking-wider block">
-            TOTAL COMMITTED (ESCROW)
-          </span>
-          <div className="text-lg sm:text-2xl font-bold text-zinc-100 mt-1">
-            ${formatUsdc(totalCommittedUsdc)} <span className="text-xs text-zinc-400">USDC</span>
-          </div>
-          <span className="text-[10px] text-zinc-400 mt-1 block">Locked across program vaults</span>
-        </div>
+      {/* 7-Step Workflow Architecture */}
+      <div className="space-y-3">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-neutral-400">
+          7-Step On-Chain Execution Pipeline
+        </h2>
 
-        <div className="p-4 bg-zinc-950 border border-zinc-800">
-          <span className="text-[10px] text-zinc-400 uppercase tracking-wider block">
-            TOTAL SETTLED (PAID)
-          </span>
-          <div className="text-lg sm:text-2xl font-bold text-emerald-400 mt-1">
-            ${formatUsdc(totalSettledUsdc)} <span className="text-xs text-zinc-400">USDC</span>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl space-y-1.5">
+            <div className="text-violet-400 font-bold">1. Sponsor Creates</div>
+            <p className="text-[11px] text-neutral-400">
+              Sponsor initializes Agreement & Milestones with committed Definition of Done hashes.
+            </p>
           </div>
-          <span className="text-[10px] text-emerald-400/80 mt-1 block">Disbursed to worker ATAs</span>
-        </div>
-
-        <div className="p-4 bg-zinc-950 border border-zinc-800">
-          <span className="text-[10px] text-zinc-400 uppercase tracking-wider block">
-            ACTIVE PIPELINES
-          </span>
-          <div className="text-lg sm:text-2xl font-bold text-cyan-400 mt-1">
-            {activeCount}{' '}
-            <span className="text-xs text-zinc-400 font-normal">Agreements</span>
+          <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl space-y-1.5">
+            <div className="text-violet-400 font-bold">2. Worker Accepts</div>
+            <p className="text-[11px] text-neutral-400">
+              Assigned worker signs to lock allocations and enable deposit funding.
+            </p>
           </div>
-          <span className="text-[10px] text-zinc-400 mt-1 block">Work in execution</span>
-        </div>
-
-        <div className="p-4 bg-zinc-950 border border-zinc-800">
-          <span className="text-[10px] text-zinc-400 uppercase tracking-wider block">
-            ON-CHAIN SETTLEMENT TOKEN
-          </span>
-          <div className="text-lg sm:text-2xl font-bold text-zinc-200 mt-1">
-            USDC <span className="text-xs text-zinc-400 font-mono">(Devnet SPL)</span>
+          <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl space-y-1.5">
+            <div className="text-violet-400 font-bold">3. Sponsor Funds</div>
+            <p className="text-[11px] text-neutral-400">
+              Devnet USDC transfers from Sponsor into program Escrow PDA vault.
+            </p>
           </div>
-          <span className="text-[10px] text-zinc-400 mt-1 block truncate">Mint: 4zMMC9...ncDU</span>
+          <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl space-y-1.5">
+            <div className="text-violet-400 font-bold">4. Worker Evidence</div>
+            <p className="text-[11px] text-neutral-400">
+              Worker submits 32-byte cryptographic evidence hash on-chain.
+            </p>
+          </div>
+          <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl space-y-1.5">
+            <div className="text-violet-400 font-bold">5. Verifier Attests</div>
+            <p className="text-[11px] text-neutral-400">
+              Designated verifier signs verification instruction or issues rejection hash.
+            </p>
+          </div>
+          <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl space-y-1.5">
+            <div className="text-violet-400 font-bold">6. Escrow Release</div>
+            <p className="text-[11px] text-neutral-400">
+              Verified funds disburse directly to worker USDC account.
+            </p>
+          </div>
+          <div className="p-4 bg-[#000000] border border-[#26262a] rounded-2xl space-y-1.5 sm:col-span-2">
+            <div className="text-violet-400 font-bold">7. Mutual Cancellation</div>
+            <p className="text-[11px] text-neutral-400">
+              Requires both sponsor and worker signatures; refunds remaining escrow back to Sponsor.
+            </p>
+          </div>
         </div>
       </div>
 
       {/* Agreements Directory Section */}
-      <div className="space-y-4 font-mono">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-3">
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#26262a]">
           <div>
-            <h2 className="text-base sm:text-lg font-bold text-zinc-100 flex items-center gap-2">
-              <Database className="w-4 h-4 text-cyan-400" />
-              On-Chain Agreements & Milestones
+            <h2 className="text-base font-bold uppercase tracking-wide text-white">
+              Live Agreements
             </h2>
-            <p className="text-xs text-zinc-400">
-              Deterministic Anchor accounts populated from Solana Devnet storage driver
+            <p className="text-xs text-neutral-400">
+              Real accounts decoded directly from deployed program 82MC...ZXYM
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Filter Tabs */}
+          <div className="flex items-center gap-1 bg-[#000000] border border-[#26262a] p-1 rounded-xl text-xs">
+            {connected && (
+              <button
+                onClick={() => setActiveTab('my')}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
+                  activeTab === 'my'
+                    ? 'bg-violet-600 text-white shadow-sm'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                My Agreements
+              </button>
+            )}
             <button
-              onClick={handleResetSeed}
-              disabled={isResetting}
-              className="text-xs text-zinc-400 hover:text-zinc-200 inline-flex items-center gap-1 px-2.5 py-1 bg-zinc-900 border border-zinc-800 hover:border-zinc-700"
-              title="Reset sample agreements to initial state"
-            >
-              <RefreshCw className={`w-3 h-3 ${isResetting ? 'animate-spin' : ''}`} />
-              Reset Demo Data
-            </button>
-          </div>
-        </div>
-
-        {/* Filter Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-          {['ALL', 'ACTIVE', 'FUNDED', 'COMPLETED', 'DRAFT'].map((st) => (
-            <button
-              key={st}
-              onClick={() => setFilter(st)}
-              className={`px-3 py-1 border transition-colors ${
-                filter === st
-                  ? 'bg-zinc-800 border-cyan-400 text-cyan-300 font-bold'
-                  : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+              onClick={() => setActiveTab('all')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
+                activeTab === 'all'
+                  ? 'bg-violet-600 text-white shadow-sm'
+                  : 'text-neutral-400 hover:text-white'
               }`}
             >
-              {st} {st === 'ALL' ? `(${agreements.length})` : ''}
+              All Agreements
             </button>
-          ))}
+            <button
+              onClick={() => setActiveTab('active')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
+                activeTab === 'active'
+                  ? 'bg-violet-600 text-white shadow-sm'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              Active
+            </button>
+            <button
+              onClick={() => setActiveTab('completed')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
+                activeTab === 'completed'
+                  ? 'bg-violet-600 text-white shadow-sm'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              Completed
+            </button>
+          </div>
         </div>
 
-        {/* Agreements List */}
+        {/* Agreements Cards */}
         {isLoading ? (
-          <div className="p-8 text-center border border-zinc-800 bg-zinc-950 text-zinc-400">
-            <div className="animate-spin w-5 h-5 border-2 border-cyan-400 border-t-transparent rounded-full mx-auto mb-2" />
-            Loading on-chain account states...
+          <div className="p-12 text-center bg-[#000000] border border-[#26262a] rounded-2xl text-xs text-neutral-400 space-y-2">
+            <div>Fetching live program accounts from Solana Devnet RPC...</div>
           </div>
-        ) : filtered.length === 0 ? (
-          <div className="p-8 text-center border border-zinc-800 bg-zinc-950 space-y-3">
-            <p className="text-zinc-400 text-xs">No agreements match the selected filter.</p>
-            <Link href="/agreements/new">
-              <Button variant="primary" size="sm">
-                Create First Agreement
+        ) : filteredAgreements.length === 0 ? (
+          <div className="p-12 text-center bg-[#000000] border border-[#26262a] rounded-2xl space-y-3 text-xs">
+            <FileCode className="w-10 h-10 mx-auto text-neutral-600" />
+            <h3 className="text-sm font-bold text-white">No Active Agreements Found</h3>
+            <p className="text-neutral-400 max-w-sm mx-auto">
+              {activeTab === 'my'
+                ? "You haven't created or been assigned to any escrow agreements with this wallet yet."
+                : 'No agreements currently match this filter on Solana Devnet.'}
+            </p>
+            <div className="pt-2">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setIsCreateDrawerOpen(true)}
+                className="bg-violet-600 hover:bg-violet-500 font-bold"
+              >
+                <PlusCircle className="w-4 h-4 mr-1.5" /> Create Escrow Agreement
               </Button>
-            </Link>
+            </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3">
-            {filtered.map((agreement) => {
+          <div className="space-y-3">
+            {filteredAgreements.map((agreement) => {
+              const nextMilestone =
+                agreement.milestones.find((m) => m.state !== MilestoneState.RELEASED) ||
+                agreement.milestones[agreement.milestones.length - 1];
+
               const releasedCount = agreement.milestones.filter(
                 (m) => m.state === MilestoneState.RELEASED
               ).length;
-              const pendingEvidenceCount = agreement.milestones.filter(
-                (m) => m.state === MilestoneState.PENDING
-              ).length;
-              const awaitingVerificationCount = agreement.milestones.filter(
-                (m) => m.state === MilestoneState.EVIDENCE_SUBMITTED
-              ).length;
+
+              const progressPct =
+                agreement.milestones.length > 0
+                  ? Math.round((releasedCount / agreement.milestones.length) * 100)
+                  : 0;
 
               return (
                 <div
                   key={agreement.publicKey}
-                  className="p-5 border border-zinc-800 bg-zinc-950/70 hover:border-zinc-700 transition-colors"
+                  className="p-5 bg-[#000000] hover:bg-neutral-950 border border-[#26262a] hover:border-violet-500/40 rounded-2xl transition-all space-y-4"
                 >
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                    {/* Left side details */}
-                    <div className="space-y-2 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-sm sm:text-base font-bold text-zinc-100 hover:text-cyan-400">
-                          <Link href={`/agreements/${agreement.publicKey}`}>
-                            {agreement.title}
-                          </Link>
-                        </h3>
+                  {/* Top Row */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
                         <AgreementStateBadge state={agreement.state} />
+                        <Link
+                          href={`/agreements/${agreement.publicKey}`}
+                          className="text-base font-bold text-white hover:text-violet-300 transition-colors"
+                        >
+                          {agreement.title}
+                        </Link>
                       </div>
-
-                      <p className="text-xs text-zinc-400 line-clamp-2">{agreement.description}</p>
-
-                      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400 pt-1">
-                        <div>
-                          <span>SPONSOR: </span>
-                          <span className="text-zinc-300 font-mono">
-                            {truncateAddress(agreement.sponsor, 4)}
-                          </span>
-                        </div>
-                        <div>
-                          <span>WORKER: </span>
-                          <span className="text-zinc-300 font-mono">
-                            {truncateAddress(agreement.worker, 4)}
-                          </span>
-                        </div>
-                        <div>
-                          <span>VAULT PDA: </span>
-                          <span className="text-cyan-400 font-mono">
-                            {truncateAddress(agreement.vaultPda, 4)}
-                          </span>
-                        </div>
-                        <div>
-                          <span>TERMS HASH: </span>
-                          <span className="text-zinc-300 font-mono">
-                            {truncateAddress(agreement.termsHash, 4)}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Milestone Progress Summary */}
-                      <div className="pt-2 flex flex-wrap items-center gap-2 text-[11px]">
-                        <span className="text-zinc-400">
-                          Milestones ({agreement.milestones.length}):
+                      <div className="text-xs text-neutral-400 flex items-center gap-3">
+                        <span>Worker: {truncateAddress(agreement.worker, 4)}</span>
+                        <span>•</span>
+                        <span>Vault: {truncateAddress(agreement.vaultPda, 4)}</span>
+                        <span>•</span>
+                        <span className={agreement.workerAccepted ? 'text-emerald-400' : 'text-amber-400'}>
+                          {agreement.workerAccepted ? 'Accepted ✓' : 'Awaiting Worker Acceptance'}
                         </span>
-                        <span className="px-1.5 py-0.5 bg-emerald-950/80 border border-emerald-800 text-emerald-400">
-                          {releasedCount} Settled
-                        </span>
-                        {awaitingVerificationCount > 0 && (
-                          <span className="px-1.5 py-0.5 bg-amber-950/80 border border-amber-800 text-amber-400 animate-pulse">
-                            {awaitingVerificationCount} In Verification
-                          </span>
-                        )}
-                        {pendingEvidenceCount > 0 && (
-                          <span className="px-1.5 py-0.5 bg-zinc-900 border border-zinc-800 text-zinc-400">
-                            {pendingEvidenceCount} In Progress
-                          </span>
-                        )}
                       </div>
                     </div>
 
-                    {/* Right side amount & CTA */}
-                    <div className="flex flex-row lg:flex-col items-center lg:items-end justify-between border-t lg:border-t-0 pt-3 lg:pt-0 border-zinc-800 gap-3">
-                      <div className="text-left lg:text-right">
-                        <div className="text-base sm:text-xl font-bold text-emerald-400">
-                          ${formatUsdc(agreement.totalAmountUsdc)}
-                        </div>
-                        <span className="text-[10px] text-zinc-400 uppercase">
-                          USDC Total Budget
-                        </span>
+                    <div className="text-left sm:text-right">
+                      <div className="text-lg font-black text-violet-400">
+                        ${formatUsdc(agreement.totalAmountUsdc)} USDC
                       </div>
+                      <div className="text-[11px] text-neutral-400">
+                        {releasedCount} / {agreement.milestones.length} Milestones Settled ({progressPct}%)
+                      </div>
+                    </div>
+                  </div>
 
-                      <Link href={`/agreements/${agreement.publicKey}`}>
-                        <Button variant="primary" size="sm">
-                          Inspect Agreement
-                          <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                  {/* Progress bar */}
+                  <div className="w-full h-1.5 bg-neutral-900 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-violet-500 transition-all duration-300"
+                      style={{ width: `${progressPct}%` }}
+                    />
+                  </div>
+
+                  {/* Milestone Pills & Quick Action Buttons */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-[#26262a]/60">
+                    <div className="flex flex-wrap gap-1.5">
+                      {agreement.milestones.map((m, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => openDrawer('inspect', agreement, m)}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors ${
+                            m.state === MilestoneState.RELEASED
+                              ? 'bg-emerald-950/30 text-emerald-300 border-emerald-500/30'
+                              : m.state === MilestoneState.VERIFIED
+                              ? 'bg-violet-950/30 text-violet-300 border-violet-500/30 font-bold'
+                              : m.state === MilestoneState.EVIDENCE_SUBMITTED
+                              ? 'bg-amber-950/30 text-amber-300 border-amber-500/30'
+                              : 'bg-[#000000] text-neutral-400 border-[#26262a]'
+                          }`}
+                        >
+                          #{idx + 1}: ${formatUsdc(m.amountUsdc)}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {agreement.state === AgreementState.DRAFT && !agreement.workerAccepted && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => openDrawer('accept', agreement)}
+                          className="text-xs text-violet-300 border-violet-500/30"
+                        >
+                          <FileCheck2 className="w-3.5 h-3.5 mr-1" />
+                          Worker Accept
                         </Button>
+                      )}
+
+                      {agreement.state === AgreementState.DRAFT && agreement.workerAccepted && (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => openDrawer('fund', agreement)}
+                          className="text-xs bg-emerald-600 hover:bg-emerald-500"
+                        >
+                          <Lock className="w-3.5 h-3.5 mr-1" />
+                          Fund Escrow
+                        </Button>
+                      )}
+
+                      {nextMilestone &&
+                        nextMilestone.state === MilestoneState.PENDING &&
+                        (agreement.state === AgreementState.FUNDED || agreement.state === AgreementState.ACTIVE) && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => openDrawer('submit_evidence', agreement, nextMilestone)}
+                            className="text-xs"
+                          >
+                            <UploadCloud className="w-3.5 h-3.5 mr-1 text-violet-400" />
+                            Submit Proof
+                          </Button>
+                        )}
+
+                      {nextMilestone && nextMilestone.state === MilestoneState.EVIDENCE_SUBMITTED && (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => openDrawer('verify', agreement, nextMilestone)}
+                          className="text-xs"
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5 mr-1" />
+                          Verify
+                        </Button>
+                      )}
+
+                      {nextMilestone && nextMilestone.state === MilestoneState.VERIFIED && (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => openDrawer('release', agreement, nextMilestone)}
+                          className="text-xs bg-emerald-600 hover:bg-emerald-500"
+                        >
+                          <Coins className="w-3.5 h-3.5 mr-1" />
+                          Release Funds
+                        </Button>
+                      )}
+
+                      <Link
+                        href={`/agreements/${agreement.publicKey}`}
+                        className="px-3 py-1.5 rounded-xl bg-[#000000] hover:bg-neutral-900 border border-[#26262a] text-neutral-300 text-xs font-semibold inline-flex items-center gap-1"
+                      >
+                        Details <ArrowRight className="w-3 h-3" />
                       </Link>
                     </div>
                   </div>

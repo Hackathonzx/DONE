@@ -23,7 +23,7 @@ export function NetworkBadge() {
       </div>
       <span className="text-zinc-700">|</span>
       <div className="text-zinc-400 text-[11px] flex items-center gap-1">
-        <Activity className="w-3 h-3 text-cyan-400" />
+        <Activity className="w-3 h-3 text-violet-400" />
         <span className="text-zinc-200 tabular-nums">{rpcLatencyMs}ms</span>
       </div>
     </div>

@@ -4,72 +4,92 @@ import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAgreement } from '@/hooks/useAgreement';
-import { useWallet } from '@/components/web3/WalletContext';
 import { useTransactionExecution } from '@/hooks/useTransactionExecution';
-import { AgreementState, MilestoneState } from '@/types/protocol';
+import { AgreementState, MilestoneState, MilestoneAccount } from '@/types/protocol';
 import { formatUsdc, truncateAddress, getExplorerUrl } from '@/lib/solana';
-import { AgreementStateBadge } from '@/components/ui/Badge';
+import { useWallet } from '@/components/web3/WalletContext';
+import { AgreementStateBadge, MilestoneStateBadge, VerificationTypeBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Card, CardHeader, CardContent } from '@/components/ui/Card';
-import { MilestoneRow } from '@/components/protocol/MilestoneRow';
-import { FundingModal } from '@/components/protocol/FundingModal';
+import { Card } from '@/components/ui/Card';
 import { TxStateModal } from '@/components/web3/TxStateModal';
+import { QuickActionModal, QuickActionType } from '@/components/protocol/QuickActionModal';
+import { DoneLogo } from '@/components/protocol/DoneLogo';
 import {
-  ShieldCheck,
-  Lock,
+  ArrowLeft,
   ExternalLink,
-  ChevronLeft,
+  Lock,
+  UploadCloud,
+  ShieldCheck,
   Coins,
-  FileText,
-  User,
-  Hash,
-  AlertTriangle,
+  Copy,
+  Check,
+  ChevronRight,
+  AlertCircle,
+  FileCheck2,
+  XCircle,
 } from 'lucide-react';
 
 export default function AgreementDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params?.id as string;
-
   const { data: agreement, isLoading } = useAgreement(id);
-  const { publicKeyString, role } = useWallet();
-  const { txState, execute, reset, isOpen: isTxOpen } = useTransactionExecution();
+  const { publicKeyString } = useWallet();
+  const { txState, execute, reset: resetTx, isOpen: isTxOpen } = useTransactionExecution();
 
-  const [isFundingModalOpen, setIsFundingModalOpen] = useState(false);
+  const [drawerState, setDrawerState] = useState<{
+    isOpen: boolean;
+    type: QuickActionType;
+    milestone?: MilestoneAccount;
+  }>({
+    isOpen: false,
+    type: 'inspect',
+  });
+
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const copyText = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(label);
+    setTimeout(() => setCopiedKey(null), 1500);
+  };
+
+  const openDrawer = (type: QuickActionType, milestone?: MilestoneAccount) => {
+    setDrawerState({ isOpen: true, type, milestone });
+  };
+
+  const closeDrawer = () => {
+    setDrawerState((prev) => ({ ...prev, isOpen: false }));
+  };
 
   if (isLoading) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 text-center font-mono">
-        <div className="animate-spin w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full mx-auto mb-3" />
-        <p className="text-zinc-400 text-xs">Deserializing Anchor agreement account...</p>
+      <div className="flex flex-col items-center justify-center min-h-[400px] font-mono text-neutral-400">
+        <DoneLogo className="w-10 h-10 animate-pulse mb-3" />
+        <span className="text-xs">Fetching on-chain agreement state from Solana Devnet...</span>
       </div>
     );
   }
 
   if (!agreement) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 text-center font-mono space-y-4">
-        <div className="p-8 border border-zinc-800 bg-zinc-950 max-w-lg mx-auto">
-          <AlertTriangle className="w-8 h-8 text-amber-400 mx-auto mb-2" />
-          <h2 className="text-base font-bold text-zinc-100">Agreement Account Not Found</h2>
-          <p className="text-xs text-zinc-400 mt-1">
-            No on-chain account matching address {id} was found on Devnet.
-          </p>
-          <div className="pt-4">
-            <Link href="/">
-              <Button variant="outline" size="sm">
-                Return to Protocol Explorer
-              </Button>
-            </Link>
-          </div>
-        </div>
+      <div className="space-y-4 font-mono text-neutral-100 max-w-2xl mx-auto py-12 text-center">
+        <h2 className="text-base font-bold text-white">Agreement Account Not Found</h2>
+        <p className="text-xs text-neutral-400">
+          No deployed account matching address {id} on Devnet.
+        </p>
+        <Link
+          href="/agreements"
+          className="inline-flex items-center gap-2 text-xs text-violet-400 hover:text-violet-300 underline"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" /> Return to Agreements
+        </Link>
       </div>
     );
   }
 
-  const isSponsor = publicKeyString === agreement.sponsor;
-  const isWorker = publicKeyString === agreement.worker;
-  const isVerifier = isSponsor || role === 'oracle';
+  const isSponsor = publicKeyString && publicKeyString === agreement.sponsor;
+  const isWorker = publicKeyString && publicKeyString === agreement.worker;
 
   const settledAmountUsdc = agreement.milestones
     .filter((m) => m.state === MilestoneState.RELEASED)
@@ -80,175 +100,241 @@ export default function AgreementDetailPage() {
       ? Math.round((settledAmountUsdc / agreement.totalAmountUsdc) * 100)
       : 0;
 
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8 font-mono">
-      <TxStateModal state={txState} isOpen={isTxOpen} onClose={reset} />
+  const nextActionableMilestone = agreement.milestones.find(
+    (m) => m.state !== MilestoneState.RELEASED
+  );
 
-      <FundingModal
+  return (
+    <div className="space-y-6 font-mono text-neutral-100 max-w-6xl mx-auto">
+      <TxStateModal state={txState} isOpen={isTxOpen} onClose={resetTx} />
+
+      <QuickActionModal
+        isOpen={drawerState.isOpen}
+        onClose={closeDrawer}
+        actionType={drawerState.type}
         agreement={agreement}
-        isOpen={isFundingModalOpen}
-        onClose={() => setIsFundingModalOpen(false)}
+        milestone={drawerState.milestone}
         onExecute={execute}
+        onSwitchAction={(type, m) => setDrawerState({ isOpen: true, type, milestone: m })}
       />
 
-      {/* Navigation Breadcrumb */}
-      <div className="flex items-center justify-between">
+      {/* Top Breadcrumb */}
+      <div className="flex items-center justify-between border-b border-[#26262a] pb-3 text-xs">
         <Link
-          href="/"
-          className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+          href="/agreements"
+          className="flex items-center gap-1.5 text-neutral-400 hover:text-white transition-colors"
         >
-          <ChevronLeft className="w-4 h-4" />
-          <span>Back to Protocol Explorer</span>
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Back to Agreements</span>
         </Link>
-
         <div className="flex items-center gap-2">
-          {agreement.fundingTx && (
-            <a
-              href={getExplorerUrl(agreement.fundingTx, 'tx')}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-cyan-400 hover:text-cyan-300 inline-flex items-center gap-1 underline"
-            >
-              <span>Escrow Tx</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
-          )}
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-[11px] text-neutral-300">Live On-Chain Devnet PDA</span>
         </div>
       </div>
 
       {/* Main Header Banner */}
-      <div className="p-6 sm:p-8 bg-zinc-950 border border-zinc-800 space-y-6">
+      <Card className="p-6 bg-[#000000] border-[#26262a] rounded-3xl space-y-5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-2 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-bold text-zinc-100">{agreement.title}</h1>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2.5">
               <AgreementStateBadge state={agreement.state} />
+              <h1 className="text-xl sm:text-2xl font-bold text-white tracking-wide">
+                {agreement.title}
+              </h1>
             </div>
-            <p className="text-xs sm:text-sm text-zinc-400 max-w-3xl">{agreement.description}</p>
+            <p className="text-xs text-neutral-400 max-w-2xl">{agreement.description}</p>
           </div>
 
-          {/* Budget / Funding CTA */}
-          <div className="flex flex-col sm:flex-row lg:flex-col items-start lg:items-end justify-between gap-3 border-t lg:border-t-0 pt-4 lg:pt-0 border-zinc-800">
+          <div className="flex flex-row lg:flex-col items-center lg:items-end justify-between border-t lg:border-t-0 pt-3 lg:pt-0 border-[#26262a] gap-3">
             <div>
-              <span className="text-[10px] text-zinc-400 uppercase block">ESCROW BUDGET</span>
-              <div className="text-2xl font-extrabold text-emerald-400">
+              <span className="text-[10px] text-neutral-400 uppercase block font-semibold">
+                ESCROW BUDGET
+              </span>
+              <div className="text-2xl font-bold text-emerald-400">
                 ${formatUsdc(agreement.totalAmountUsdc)}{' '}
-                <span className="text-xs text-zinc-400">USDC</span>
+                <span className="text-xs text-neutral-400 font-normal">USDC</span>
               </div>
             </div>
 
-            {agreement.state === AgreementState.DRAFT && (
-              <Button
-                variant="primary"
-                size="md"
-                onClick={() => setIsFundingModalOpen(true)}
-                className="w-full sm:w-auto"
-              >
-                <Lock className="w-4 h-4 mr-1.5 text-black" />
-                Fund Escrow Vault
-              </Button>
-            )}
+            {/* Workflow Action Buttons */}
+            <div className="flex items-center gap-2">
+              {agreement.state === AgreementState.DRAFT && !agreement.workerAccepted && (
+                <Button
+                  variant="primary"
+                  size="md"
+                  onClick={() => openDrawer('accept')}
+                  className="bg-violet-600 hover:bg-violet-500 font-bold"
+                >
+                  <FileCheck2 className="w-4 h-4 mr-1.5" />
+                  Worker Accept Terms
+                </Button>
+              )}
+
+              {agreement.state === AgreementState.DRAFT && agreement.workerAccepted && (
+                <Button
+                  variant="primary"
+                  size="md"
+                  onClick={() => openDrawer('fund')}
+                  className="bg-emerald-600 hover:bg-emerald-500 font-bold"
+                >
+                  <Lock className="w-4 h-4 mr-1.5" />
+                  Sponsor Fund Escrow
+                </Button>
+              )}
+
+              {(agreement.state === AgreementState.FUNDED || agreement.state === AgreementState.ACTIVE) && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => openDrawer('cancel')}
+                  className="text-rose-400 hover:text-rose-300 border-rose-500/30 text-xs"
+                >
+                  <XCircle className="w-3.5 h-3.5 mr-1" />
+                  Cancel Escrow
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Settlement Progress Bar */}
-        <div className="space-y-1.5 pt-2 border-t border-zinc-800/80">
-          <div className="flex justify-between text-xs">
-            <span className="text-zinc-400">
-              Settlement Progress: <span className="text-zinc-200 font-semibold">{percentSettled}%</span>
+        {/* Progress Track */}
+        <div className="space-y-1.5 pt-2 border-t border-[#26262a]">
+          <div className="flex justify-between text-xs text-neutral-400">
+            <span>
+              Settlement Disbursed: <span className="text-white font-semibold">{percentSettled}%</span>
             </span>
             <span className="text-emerald-400 font-semibold">
               ${formatUsdc(settledAmountUsdc)} / ${formatUsdc(agreement.totalAmountUsdc)} USDC
             </span>
           </div>
-          <div className="w-full h-2 bg-zinc-900 border border-zinc-800 rounded-none overflow-hidden">
+          <div className="w-full h-2 bg-neutral-900 rounded-full overflow-hidden">
             <div
-              className="h-full bg-cyan-500 transition-all duration-500"
+              className="h-full bg-gradient-to-r from-violet-600 to-violet-400 rounded-full transition-all duration-300"
               style={{ width: `${percentSettled}%` }}
             />
           </div>
         </div>
 
-        {/* Account Details & PDAs Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 text-xs">
-          <div className="p-3 bg-zinc-900/60 border border-zinc-800">
-            <span className="text-[10px] text-zinc-400 uppercase block mb-1">SPONSOR ACCOUNT</span>
-            <span className="text-zinc-200 font-mono text-xs">{truncateAddress(agreement.sponsor, 6)}</span>
-            <span className="text-[10px] text-zinc-400 block mt-0.5">
-              {isSponsor ? '(Connected as Sponsor)' : 'Agreement creator'}
-            </span>
+        {/* Monospace IDs Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1 text-xs">
+          <div className="p-3 bg-[#000000] border border-[#26262a] rounded-xl">
+            <span className="text-[10px] text-neutral-500 uppercase block mb-0.5">SPONSOR ACCOUNT</span>
+            <span className="text-neutral-200 font-mono text-xs">{truncateAddress(agreement.sponsor, 6)}</span>
           </div>
-
-          <div className="p-3 bg-zinc-900/60 border border-zinc-800">
-            <span className="text-[10px] text-zinc-400 uppercase block mb-1">WORKER ACCOUNT</span>
-            <span className="text-zinc-200 font-mono text-xs">{truncateAddress(agreement.worker, 6)}</span>
-            <span className="text-[10px] text-zinc-400 block mt-0.5">
-              {isWorker ? '(Connected as Worker)' : 'Designated executor'}
-            </span>
+          <div className="p-3 bg-[#000000] border border-[#26262a] rounded-xl">
+            <span className="text-[10px] text-neutral-500 uppercase block mb-0.5">WORKER ACCOUNT</span>
+            <span className="text-neutral-200 font-mono text-xs">{truncateAddress(agreement.worker, 6)}</span>
           </div>
-
-          <div className="p-3 bg-zinc-900/60 border border-zinc-800">
-            <span className="text-[10px] text-zinc-400 uppercase block mb-1">ESCROW VAULT PDA</span>
-            <span className="text-cyan-400 font-mono text-xs">{truncateAddress(agreement.vaultPda, 6)}</span>
-            <span className="text-[10px] text-zinc-400 block mt-0.5">
-              Holds locked SPL USDC
-            </span>
+          <div className="p-3 bg-[#000000] border border-[#26262a] rounded-xl">
+            <span className="text-[10px] text-neutral-500 uppercase block mb-0.5">VAULT PDA</span>
+            <span className="text-violet-300 font-mono text-xs">{truncateAddress(agreement.vaultPda, 6)}</span>
           </div>
-
-          <div className="p-3 bg-zinc-900/60 border border-zinc-800">
-            <span className="text-[10px] text-zinc-400 uppercase block mb-1">TERMS SHA-256 HASH</span>
-            <span className="text-zinc-300 font-mono text-xs" title={agreement.termsHash}>
-              {truncateAddress(agreement.termsHash, 6)}
+          <div className="p-3 bg-[#000000] border border-[#26262a] rounded-xl">
+            <span className="text-[10px] text-neutral-500 uppercase block mb-0.5">WORKER ACCEPTED</span>
+            <span className={agreement.workerAccepted ? 'text-emerald-400 font-bold' : 'text-amber-400 font-semibold'}>
+              {agreement.workerAccepted ? 'ACCEPTED ✓' : 'PENDING ACCEPTANCE'}
             </span>
-            <span className="text-[10px] text-zinc-400 block mt-0.5">Canonical pre-image</span>
           </div>
         </div>
-      </div>
+      </Card>
 
-      {/* Terms Drawer / Collapsible Box */}
-      {agreement.termsText && (
-        <Card className="bg-zinc-950">
-          <CardHeader className="bg-zinc-900/40 py-3">
-            <div className="flex items-center gap-2 text-xs font-semibold text-zinc-300">
-              <FileText className="w-3.5 h-3.5 text-cyan-400" />
-              <span>CANONICAL AGREEMENT TERMS & LEGAL PROVISIONS</span>
-            </div>
-            <span className="text-[10px] text-zinc-400 font-mono">
-              HASH: {truncateAddress(agreement.termsHash, 8)}
-            </span>
-          </CardHeader>
-          <CardContent className="py-3">
-            <pre className="text-xs text-zinc-400 whitespace-pre-wrap font-mono leading-relaxed bg-zinc-900/40 p-3 border border-zinc-800">
-              {agreement.termsText}
-            </pre>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Milestones Section */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-          <div>
-            <h2 className="text-base font-bold text-zinc-100 flex items-center gap-2">
-              <Coins className="w-4 h-4 text-cyan-400" />
-              Execution Milestones & DoD Pipeline ({agreement.milestones.length})
-            </h2>
-            <p className="text-xs text-zinc-400">
-              Select a milestone to inspect evidence submission and verification audit steps.
-            </p>
-          </div>
+      {/* Sequential Milestone Pipeline */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between border-b border-[#26262a] pb-2.5">
+          <h2 className="text-xs font-bold text-white uppercase tracking-wider">
+            Milestone Pipeline ({agreement.milestones.length})
+          </h2>
+          <span className="text-[11px] text-neutral-400">Click any milestone for details</span>
         </div>
 
         <div className="space-y-3">
           {agreement.milestones.map((milestone) => (
-            <MilestoneRow
+            <div
               key={milestone.publicKey}
-              milestone={milestone}
-              agreementId={agreement.publicKey}
-              isSponsor={isSponsor}
-              isWorker={isWorker}
-              isVerifier={isVerifier}
-            />
+              className="bg-[#000000] border border-[#26262a] hover:border-violet-500/40 rounded-2xl p-4 sm:p-5 transition-all space-y-3.5"
+            >
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                {/* Left: Index, Title, Status */}
+                <div
+                  className="space-y-1.5 flex-1 cursor-pointer"
+                  onClick={() => openDrawer('inspect', milestone)}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="px-2 py-0.5 rounded-lg bg-[#000000] border border-violet-500/30 text-xs font-bold text-violet-300">
+                      #{milestone.index + 1}
+                    </span>
+                    <h3 className="text-sm sm:text-base font-bold text-white hover:text-violet-300 transition-colors">
+                      {milestone.title}
+                    </h3>
+                    <MilestoneStateBadge state={milestone.state} />
+                  </div>
+                  <p className="text-xs text-neutral-400">{milestone.description}</p>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-neutral-400 pt-1">
+                    <span>DoD: {truncateAddress(milestone.dodHash, 6)}</span>
+                    <span>•</span>
+                    <span>Verifier: {truncateAddress(milestone.verifier, 4)}</span>
+                  </div>
+                </div>
+
+                {/* Right: Amount & Direct Action Button */}
+                <div className="flex flex-row lg:flex-col items-center lg:items-end justify-between border-t lg:border-t-0 pt-3 lg:pt-0 border-[#26262a] gap-3">
+                  <div className="text-left lg:text-right">
+                    <div className="text-base sm:text-lg font-bold text-emerald-400">
+                      ${formatUsdc(milestone.amountUsdc)} USDC
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {milestone.state === MilestoneState.PENDING && (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        disabled={agreement.state === AgreementState.DRAFT}
+                        onClick={() => openDrawer('submit_evidence', milestone)}
+                      >
+                        <UploadCloud className="w-3.5 h-3.5 mr-1.5" />
+                        Submit Proof
+                      </Button>
+                    )}
+
+                    {milestone.state === MilestoneState.EVIDENCE_SUBMITTED && (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => openDrawer('verify', milestone)}
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />
+                        Verify DoD
+                      </Button>
+                    )}
+
+                    {milestone.state === MilestoneState.VERIFIED && (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => openDrawer('release', milestone)}
+                        className="bg-emerald-500 hover:bg-emerald-400 text-black font-bold"
+                      >
+                        <Coins className="w-3.5 h-3.5 mr-1.5" />
+                        Release Escrow
+                      </Button>
+                    )}
+
+                    {milestone.state === MilestoneState.RELEASED && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => openDrawer('inspect', milestone)}
+                      >
+                        Receipt
+                        <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           ))}
         </div>
       </div>

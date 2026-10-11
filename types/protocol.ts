@@ -73,6 +73,9 @@ export interface AgreementAccount {
   vaultPda: string;
   bump: number;
   milestones: MilestoneAccount[];
+  workerAccepted?: boolean;
+  agreementId?: string;
+  isOnChain?: boolean;
 }
 
 export interface TransactionExecutionState {
@@ -86,8 +89,19 @@ export interface TransactionExecutionState {
   instructionSummary?: string;
 }
 
+export interface ProtocolLogEntry {
+  id: string;
+  timestamp: number;
+  action: 'CREATE_AGREEMENT' | 'CREATE_MILESTONE' | 'FUND_ESCROW' | 'SUBMIT_EVIDENCE' | 'VERIFY_MILESTONE' | 'RELEASE_PAYMENT';
+  signature: string;
+  agreementPda: string;
+  details: string;
+  amountUsdc?: number;
+}
+
 export interface DoneProtocolProgram {
   createAgreement(params: {
+    sponsor?: PublicKey;
     worker: PublicKey;
     termsHash: Uint8Array;
     milestoneCount: number;

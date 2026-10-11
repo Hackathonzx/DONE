@@ -1,5 +1,6 @@
 'use client';
 
+import '@/lib/polyfills';
 import React, { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WalletProvider } from '../web3/WalletContext';

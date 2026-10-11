@@ -6,11 +6,12 @@ import { TransactionExecutionState } from '@/types/protocol';
 import { parseProgramError } from '@/lib/idl/done_protocol';
 import { useWallet } from '@/components/web3/WalletContext';
 import { AGREEMENTS_QUERY_KEY } from './useAgreement';
+import { Connection } from '@solana/web3.js';
+import { DEVNET_RPC_URL } from '@/lib/solana';
 
 export function useTransactionExecution() {
   const queryClient = useQueryClient();
   const { currentSlot } = useWallet();
-
   const [txState, setTxState] = useState<TransactionExecutionState>({
     status: 'idle',
   });
@@ -32,28 +33,36 @@ export function useTransactionExecution() {
         instructionSummary,
       });
 
-      // Realistic wallet prompt delay (400ms - 800ms)
-      await new Promise((resolve) => setTimeout(resolve, 600));
-
       try {
-        // Execute operation
+        // Execute real on-chain transaction (prompts wallet to sign and sends to RPC)
         const result = await operation();
 
-        // 2. Broadcasted to RPC, awaiting block confirmation
+        // 2. Broadcasted to RPC, awaiting confirmation
         setTxState({
           status: 'confirming',
           actionName,
           instructionSummary,
           signature: result.signature,
-          slot: currentSlot + 1,
+          slot: currentSlot,
         });
 
-        // Realistic Solana Devnet confirmation time (900ms - 1400ms)
-        await new Promise((resolve) => setTimeout(resolve, 1100));
+        // Query confirmed transaction info for real slot & fee lamports
+        const connection = new Connection(DEVNET_RPC_URL, 'confirmed');
+        let confirmedSlot = currentSlot;
+        let feeLamports = 5000;
 
-        // Compute simulated compute units consumed
-        const computeUnits = Math.floor(18000 + Math.random() * 22000);
-        const feeLamports = 5000;
+        try {
+          const txInfo = await connection.getTransaction(result.signature, {
+            commitment: 'confirmed',
+            maxSupportedTransactionVersion: 0,
+          });
+          if (txInfo) {
+            confirmedSlot = txInfo.slot;
+            feeLamports = txInfo.meta?.fee || 5000;
+          }
+        } catch {
+          // ignore
+        }
 
         // 3. Block confirmed
         setTxState({
@@ -61,20 +70,19 @@ export function useTransactionExecution() {
           actionName,
           instructionSummary,
           signature: result.signature,
-          slot: currentSlot + 2,
-          computeUnits,
+          slot: confirmedSlot,
           feeLamports,
         });
 
-        // Invalidate react query cache strictly after block confirmation
+        // Invalidate react-query cache so on-chain accounts immediately update
         await queryClient.invalidateQueries({ queryKey: AGREEMENTS_QUERY_KEY });
         await queryClient.invalidateQueries({ queryKey: ['protocol'] });
 
         return result;
       } catch (err: unknown) {
+        console.error('On-chain transaction failed:', err);
         const errorMsg = err instanceof Error ? err.message : String(err);
         const parsed = parseProgramError(errorMsg);
-
         setTxState({
           status: 'failed',
           actionName,

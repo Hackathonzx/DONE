@@ -5,9 +5,29 @@ export const DEVNET_USDC_MINT = new PublicKey(
   '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'
 );
 
-// DONE Protocol Program ID on Devnet
+// DONE Protocol Deployed Program ID on Solana Devnet
 export const DONE_PROGRAM_ID = new PublicKey(
-  'DoneProt11111111111111111111111111111111111'
+  '82MCkYR3RkcqBcYWDDixbaoi4bWL8w5ohu7UkJTiZXYM'
+);
+
+// Protocol Config PDA on Devnet
+export const PROTOCOL_CONFIG_PDA = new PublicKey(
+  '6HamdMRRAhWZyThM5dpCjyfQBkZaAsLrMVjQenMJPua1'
+);
+
+// ProgramData PDA on Devnet
+export const PROGRAM_DATA_PDA = new PublicKey(
+  '9rraZSR21igaq3pvTwbnoJgtsj5sJoeSXkZBUBafXC4B'
+);
+
+// Upgradeable Loader Program ID
+export const UPGRADEABLE_LOADER_ID = new PublicKey(
+  'BPFLoaderUpgradeab1e11111111111111111111111'
+);
+
+// Protocol Admin / Upgrade Authority on Devnet
+export const PROTOCOL_ADMIN_PUBKEY = new PublicKey(
+  'APCVxcE8EfdnP5bfkbVTb8foLAa2f3RACgbb1uFyUCSB'
 );
 
 // Standard Devnet RPC Endpoint

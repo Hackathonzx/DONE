@@ -11,19 +11,19 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
     return (
       <div className="w-full flex flex-col gap-1.5 font-mono">
         {label && (
-          <label className="text-xs font-medium text-zinc-300 tracking-wide flex justify-between">
+          <label className="text-xs font-medium text-neutral-300 tracking-wide flex justify-between">
             <span>{label}</span>
           </label>
         )}
         <input
           ref={ref}
-          className={`w-full bg-zinc-900/90 border px-3 py-2 text-xs sm:text-sm text-zinc-100 placeholder-zinc-500 rounded-none focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/50 transition-colors ${
-            error ? 'border-rose-500' : 'border-zinc-800'
+          className={`w-full bg-[#000000] border px-3.5 py-2.5 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 rounded-xl focus:outline-none focus:border-violet-500 transition-colors ${
+            error ? 'border-red-500' : 'border-[#26262a]'
           } ${className}`}
           {...props}
         />
-        {helperText && !error && <span className="text-[11px] text-zinc-400">{helperText}</span>}
-        {error && <span className="text-[11px] text-rose-400">{error}</span>}
+        {helperText && !error && <span className="text-[11px] text-neutral-400">{helperText}</span>}
+        {error && <span className="text-[11px] text-red-400">{error}</span>}
       </div>
     );
   }
@@ -41,19 +41,19 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
     return (
       <div className="w-full flex flex-col gap-1.5 font-mono">
         {label && (
-          <label className="text-xs font-medium text-zinc-300 tracking-wide flex justify-between">
+          <label className="text-xs font-medium text-neutral-300 tracking-wide flex justify-between">
             <span>{label}</span>
           </label>
         )}
         <textarea
           ref={ref}
-          className={`w-full bg-zinc-900/90 border px-3 py-2 text-xs sm:text-sm text-zinc-100 placeholder-zinc-500 rounded-none focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/50 transition-colors ${
-            error ? 'border-rose-500' : 'border-zinc-800'
+          className={`w-full bg-[#000000] border px-3.5 py-2.5 text-xs sm:text-sm text-neutral-100 placeholder-neutral-500 rounded-xl focus:outline-none focus:border-violet-500 transition-colors ${
+            error ? 'border-red-500' : 'border-[#26262a]'
           } ${className}`}
           {...props}
         />
-        {helperText && !error && <span className="text-[11px] text-zinc-400">{helperText}</span>}
-        {error && <span className="text-[11px] text-rose-400">{error}</span>}
+        {helperText && !error && <span className="text-[11px] text-neutral-400">{helperText}</span>}
+        {error && <span className="text-[11px] text-red-400">{error}</span>}
       </div>
     );
   }

@@ -16,19 +16,26 @@ export async function hashDefinitionOfDone(criteria: string[]): Promise<Uint8Arr
   return new Uint8Array(hashBuffer);
 }
 
+export const hashDoDCriteria = hashDefinitionOfDone;
+
 /**
  * Canonical terms hashing primitive
  */
-export async function hashAgreementTerms(terms: {
-  title: string;
-  description: string;
-  termsText: string;
-}): Promise<Uint8Array> {
-  const canonicalString = JSON.stringify({
-    description: terms.description.trim(),
-    termsText: terms.termsText.trim(),
-    title: terms.title.trim(),
-  });
+export async function hashAgreementTerms(
+  terms: string | {
+    title: string;
+    description: string;
+    termsText: string;
+  }
+): Promise<Uint8Array> {
+  const canonicalString =
+    typeof terms === 'string'
+      ? terms.trim()
+      : JSON.stringify({
+          description: terms.description.trim(),
+          termsText: terms.termsText.trim(),
+          title: terms.title.trim(),
+        });
   const buffer = new TextEncoder().encode(canonicalString);
   const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
   return new Uint8Array(hashBuffer);
