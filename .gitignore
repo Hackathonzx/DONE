@@ -6,3 +6,7 @@ coverage/
 .env*
 !.env.example
 .ignore/
+anchor/.anchor/
+anchor/target/
+anchor/node_modules/
+anchor/.yarn/
